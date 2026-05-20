@@ -1,0 +1,14 @@
+id: ultrachat_50k
+name: HuggingFaceH4/ultrachat_200k
+subset: null
+split: train_sft
+eval_split: test_sft
+source: ultrachat
+output_dir: data/processed/${data.id}
+train_size: 50000
+val_size: 2000
+eval_size: 2000
+shuffle: true
+overwrite: true
+min_prompt_chars: 1
+min_response_chars: 1

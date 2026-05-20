@@ -1,0 +1,6 @@
+defaults:
+  - data: ultrachat_10k
+  - _self_
+
+seed: 42
+hf_cache: ${oc.env:HF_HOME,'~/.cache/huggingface'}

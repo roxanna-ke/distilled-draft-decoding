@@ -1,0 +1,14 @@
+id: eval_holdout
+name: HuggingFaceH4/ultrachat_200k
+subset: null
+split: test_sft
+eval_split: null
+source: ultrachat
+output_dir: data/processed/${data.id}
+train_size: 0
+val_size: 0
+eval_size: 1000
+shuffle: true
+overwrite: true
+min_prompt_chars: 1
+min_response_chars: 1
