@@ -76,8 +76,9 @@ uv run python scripts/train.py \
   loss="$LOSS" \
   seed="$SEED" \
   run_name="$RUN_NAME" \
-  model.dtype=float16 \
+  model.dtype=float32 \
   model.device=cuda \
+  train.use_amp=true \
   loss.temperature="$KD_TEMPERATURE" \
   loss.alpha="$KD_ALPHA" \
   train.output_dir="$OUT_DIR" \

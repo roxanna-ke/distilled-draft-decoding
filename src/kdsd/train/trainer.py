@@ -185,6 +185,10 @@ def train_kd(
     if hasattr(target.config, "use_cache"):
         target.config.use_cache = False
 
+    use_amp = bool(train_cfg.get("use_amp", False)) and device != "cpu"
+    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+    LOG.info("AMP enabled=%s (autocast + GradScaler)", use_amp)
+
     optimizer = torch.optim.AdamW(
         draft.parameters(),
         lr=float(train_cfg.learning_rate),
@@ -220,15 +224,16 @@ def train_kd(
 
         while global_step < int(train_cfg.steps):
             batch = _to_device(next(train_iter), device)
-            metrics = _training_micro_step(
-                target=target,
-                draft=draft,
-                batch=batch,
-                loss_kind=str(loss_cfg.kind),
-                temperature=float(loss_cfg.temperature),
-                alpha=float(loss_cfg.alpha),
-            )
-            (metrics["loss"] / grad_accum).backward()
+            with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.float16):
+                metrics = _training_micro_step(
+                    target=target,
+                    draft=draft,
+                    batch=batch,
+                    loss_kind=str(loss_cfg.kind),
+                    temperature=float(loss_cfg.temperature),
+                    alpha=float(loss_cfg.alpha),
+                )
+            scaler.scale(metrics["loss"] / grad_accum).backward()
 
             log_buffer.append({
                 "loss": float(metrics["loss"].detach().cpu()),
@@ -240,10 +245,12 @@ def train_kd(
             if micro_step % grad_accum != 0:
                 continue
 
+            scaler.unscale_(optimizer)
             grad_norm = torch.nn.utils.clip_grad_norm_(
                 draft.parameters(), float(train_cfg.max_grad_norm)
             )
-            optimizer.step()
+            scaler.step(optimizer)
+            scaler.update()
             scheduler.step()
             optimizer.zero_grad(set_to_none=True)
             global_step += 1
@@ -278,6 +285,7 @@ def train_kd(
                     cfg=cfg,
                     device=device,
                     max_batches=int(train_cfg.max_eval_batches),
+                    use_amp=use_amp,
                 )
                 LOG.info(
                     "eval step=%d loss=%.4f ce=%.4f kd=%.4f",
@@ -362,6 +370,7 @@ def evaluate_loss(
     cfg: DictConfig,
     device: str,
     max_batches: int,
+    use_amp: bool = False,
 ) -> dict[str, float]:
     was_training = draft.training
     draft.eval()
@@ -370,14 +379,15 @@ def evaluate_loss(
         if i >= max_batches:
             break
         batch = _to_device(batch, device)
-        metrics = _forward_loss(
-            target=target,
-            draft=draft,
-            batch=batch,
-            loss_kind=str(cfg.loss.kind),
-            temperature=float(cfg.loss.temperature),
-            alpha=float(cfg.loss.alpha),
-        )
+        with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.float16):
+            metrics = _forward_loss(
+                target=target,
+                draft=draft,
+                batch=batch,
+                loss_kind=str(cfg.loss.kind),
+                temperature=float(cfg.loss.temperature),
+                alpha=float(cfg.loss.alpha),
+            )
         rows.append({
             "loss": float(metrics["loss"].detach().cpu()),
             "ce": float(metrics["ce"].detach().cpu()),

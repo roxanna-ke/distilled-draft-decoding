@@ -27,6 +27,7 @@ max_eval_batches: 32
 
 gradient_checkpointing: true
 save_optimizer: false
+use_amp: false
 
 wandb:
   enabled: false
