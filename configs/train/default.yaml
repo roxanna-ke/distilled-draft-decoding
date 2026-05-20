@@ -1,0 +1,29 @@
+draft_init: pretrained   # pretrained | HF id | local checkpoint path
+
+# Text-level data produced by scripts/prepare_data.py.
+train_path: ${data.output_dir}/train.jsonl
+val_path: ${data.output_dir}/val.jsonl
+
+# Checkpoint contract: ${train.output_dir}/model is loadable by evaluate_sd.py.
+output_dir: checkpoints/${run_name}
+resume_from: null
+
+max_length: 1024
+add_eos: true
+
+steps: 1000              # optimizer steps, not micro-batches
+batch_size: 1
+gradient_accumulation_steps: 16
+learning_rate: 2.0e-5
+weight_decay: 0.0
+warmup_steps: 50
+max_grad_norm: 1.0
+
+num_workers: 0
+log_steps: 10
+eval_steps: 100
+save_steps: 500
+max_eval_batches: 32
+
+gradient_checkpointing: true
+save_optimizer: false

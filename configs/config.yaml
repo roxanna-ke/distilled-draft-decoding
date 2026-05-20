@@ -1,12 +1,16 @@
 defaults:
   - model: qwen25
+  - data: ultrachat_10k
+  - loss: fkl
+  - train: default
   - eval: default
   - runtime: default
   - benchmark: default
   - _self_
 
-run_name: vanilla
+run_name: kd_${loss.kind}_${data.id}_seed${seed}
 seed: 42
+output_dir: checkpoints/${run_name}
 
 # Optional path (local checkpoint dir) or HF id for the draft model. If null,
 # evaluation runs vanilla (target-only) inference and reports speedup=1.0.
