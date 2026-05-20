@@ -27,3 +27,11 @@ max_eval_batches: 32
 
 gradient_checkpointing: true
 save_optimizer: false
+
+wandb:
+  enabled: false
+  project: ${oc.env:WANDB_PROJECT,kdsd}
+  entity: ${oc.env:WANDB_ENTITY,null}
+  tags: []
+  mode: ${oc.env:WANDB_MODE,online}
+  log_model: false

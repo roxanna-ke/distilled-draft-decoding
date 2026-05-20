@@ -13,6 +13,7 @@ standard next-token LM while ignoring prompt-only positions.
 from __future__ import annotations
 
 import math
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -205,90 +206,112 @@ def train_kd(
         float(loss_cfg.temperature),
         len(train_rows),
     )
+    wandb_run = _init_wandb(cfg, output_dir=out_dir)
 
     final_metrics = {"loss": math.nan, "ce": math.nan, "kd": math.nan}
-    optimizer.zero_grad(set_to_none=True)
-    grad_accum = max(1, int(train_cfg.gradient_accumulation_steps))
-    micro_step = 0
     global_step = 0
-    log_buffer: list[dict[str, float]] = []
-    train_iter = _infinite_loader(train_loader)
-    progress = tqdm(total=int(train_cfg.steps), desc="train", dynamic_ncols=True)
-
-    while global_step < int(train_cfg.steps):
-        batch = _to_device(next(train_iter), device)
-        metrics = _training_micro_step(
-            target=target,
-            draft=draft,
-            batch=batch,
-            loss_kind=str(loss_cfg.kind),
-            temperature=float(loss_cfg.temperature),
-            alpha=float(loss_cfg.alpha),
-        )
-        (metrics["loss"] / grad_accum).backward()
-
-        log_buffer.append({
-            "loss": float(metrics["loss"].detach().cpu()),
-            "ce": float(metrics["ce"].detach().cpu()),
-            "kd": float(metrics["kd"].detach().cpu()),
-        })
-        micro_step += 1
-
-        if micro_step % grad_accum != 0:
-            continue
-
-        torch.nn.utils.clip_grad_norm_(draft.parameters(), float(train_cfg.max_grad_norm))
-        optimizer.step()
-        scheduler.step()
+    try:
         optimizer.zero_grad(set_to_none=True)
-        global_step += 1
-        progress.update(1)
+        grad_accum = max(1, int(train_cfg.gradient_accumulation_steps))
+        micro_step = 0
+        log_buffer: list[dict[str, float]] = []
+        train_iter = _infinite_loader(train_loader)
+        progress = tqdm(total=int(train_cfg.steps), desc="train", dynamic_ncols=True)
 
-        final_metrics = _mean_metrics(log_buffer)
-        log_buffer.clear()
-        if global_step % int(train_cfg.log_steps) == 0:
-            LOG.info(
-                "step=%d loss=%.4f ce=%.4f kd=%.4f lr=%.3e",
-                global_step,
-                final_metrics["loss"],
-                final_metrics["ce"],
-                final_metrics["kd"],
-                scheduler.get_last_lr()[0],
-            )
-        if val_loader is not None and global_step % int(train_cfg.eval_steps) == 0:
-            val_metrics = evaluate_loss(
+        while global_step < int(train_cfg.steps):
+            batch = _to_device(next(train_iter), device)
+            metrics = _training_micro_step(
                 target=target,
                 draft=draft,
-                loader=val_loader,
-                cfg=cfg,
-                device=device,
-                max_batches=int(train_cfg.max_eval_batches),
+                batch=batch,
+                loss_kind=str(loss_cfg.kind),
+                temperature=float(loss_cfg.temperature),
+                alpha=float(loss_cfg.alpha),
             )
-            LOG.info(
-                "eval step=%d loss=%.4f ce=%.4f kd=%.4f",
-                global_step,
-                val_metrics["loss"],
-                val_metrics["ce"],
-                val_metrics["kd"],
-            )
-        if global_step % int(train_cfg.save_steps) == 0:
-            _save_checkpoint(
-                out_dir / f"checkpoint-{global_step}",
-                draft=draft,
-                tokenizer=tokenizer,
-                cfg=cfg,
-                meta=_meta(
-                    cfg=cfg,
-                    target_id=target_id,
-                    draft_id=draft_id,
-                    metrics=final_metrics,
-                    steps=global_step,
-                ),
-            )
+            (metrics["loss"] / grad_accum).backward()
 
-    progress.close()
-    if log_buffer:
-        final_metrics = _mean_metrics(log_buffer)
+            log_buffer.append({
+                "loss": float(metrics["loss"].detach().cpu()),
+                "ce": float(metrics["ce"].detach().cpu()),
+                "kd": float(metrics["kd"].detach().cpu()),
+            })
+            micro_step += 1
+
+            if micro_step % grad_accum != 0:
+                continue
+
+            grad_norm = torch.nn.utils.clip_grad_norm_(
+                draft.parameters(), float(train_cfg.max_grad_norm)
+            )
+            optimizer.step()
+            scheduler.step()
+            optimizer.zero_grad(set_to_none=True)
+            global_step += 1
+            progress.update(1)
+
+            final_metrics = _mean_metrics(log_buffer)
+            log_buffer.clear()
+            lr = float(scheduler.get_last_lr()[0])
+            if global_step % int(train_cfg.log_steps) == 0:
+                LOG.info(
+                    "step=%d loss=%.4f ce=%.4f kd=%.4f lr=%.3e grad_norm=%.3f",
+                    global_step,
+                    final_metrics["loss"],
+                    final_metrics["ce"],
+                    final_metrics["kd"],
+                    lr,
+                    float(grad_norm),
+                )
+                _wandb_log(wandb_run, {
+                    "train/loss": final_metrics["loss"],
+                    "train/ce": final_metrics["ce"],
+                    "train/kd": final_metrics["kd"],
+                    "train/lr": lr,
+                    "train/grad_norm": float(grad_norm),
+                    "train/micro_step": micro_step,
+                }, step=global_step)
+            if val_loader is not None and global_step % int(train_cfg.eval_steps) == 0:
+                val_metrics = evaluate_loss(
+                    target=target,
+                    draft=draft,
+                    loader=val_loader,
+                    cfg=cfg,
+                    device=device,
+                    max_batches=int(train_cfg.max_eval_batches),
+                )
+                LOG.info(
+                    "eval step=%d loss=%.4f ce=%.4f kd=%.4f",
+                    global_step,
+                    val_metrics["loss"],
+                    val_metrics["ce"],
+                    val_metrics["kd"],
+                )
+                _wandb_log(wandb_run, {
+                    "eval/loss": val_metrics["loss"],
+                    "eval/ce": val_metrics["ce"],
+                    "eval/kd": val_metrics["kd"],
+                }, step=global_step)
+            if global_step % int(train_cfg.save_steps) == 0:
+                _save_checkpoint(
+                    out_dir / f"checkpoint-{global_step}",
+                    draft=draft,
+                    tokenizer=tokenizer,
+                    cfg=cfg,
+                    meta=_meta(
+                        cfg=cfg,
+                        target_id=target_id,
+                        draft_id=draft_id,
+                        metrics=final_metrics,
+                        steps=global_step,
+                    ),
+                )
+
+        progress.close()
+        if log_buffer:
+            final_metrics = _mean_metrics(log_buffer)
+    finally:
+        if "progress" in locals():
+            progress.close()
 
     model_dir = out_dir / "model"
     _save_checkpoint(
@@ -304,6 +327,12 @@ def train_kd(
             steps=global_step,
         ),
     )
+    _wandb_log(wandb_run, {
+        "train/final_loss": final_metrics["loss"],
+        "train/final_ce": final_metrics["ce"],
+        "train/final_kd": final_metrics["kd"],
+    }, step=global_step)
+    _finish_wandb(wandb_run, cfg=cfg, model_dir=model_dir)
     if bool(train_cfg.save_optimizer):
         torch.save(
             {
@@ -474,6 +503,55 @@ def _save_checkpoint(
     OmegaConf.save(cfg, out_dir / "config.yaml")
     write_json(out_dir / "meta.json", meta)
     LOG.info("saved checkpoint to %s", out_dir)
+
+
+def _init_wandb(cfg: DictConfig, *, output_dir: Path):
+    wandb_cfg = cfg.train.get("wandb")
+    if not wandb_cfg or not bool(wandb_cfg.get("enabled", False)):
+        return None
+    import wandb
+
+    mode = str(wandb_cfg.get("mode", "online"))
+    os.environ.setdefault("WANDB_MODE", mode)
+    project = str(wandb_cfg.get("project") or "kdsd")
+    entity = wandb_cfg.get("entity")
+    entity = None if entity in (None, "", "null") else str(entity)
+    tags = list(wandb_cfg.get("tags") or [])
+    tags.extend([str(cfg.loss.kind), str(cfg.data.id)])
+
+    run = wandb.init(
+        project=project,
+        entity=entity,
+        name=str(cfg.run_name),
+        id=str(cfg.run_name),
+        resume="allow",
+        tags=tags,
+        dir=str(output_dir),
+        config=OmegaConf.to_container(cfg, resolve=True),
+    )
+    wandb.define_metric("train/*", step_metric="step")
+    wandb.define_metric("eval/*", step_metric="step")
+    LOG.info("wandb enabled: project=%s entity=%s run=%s", project, entity, cfg.run_name)
+    return run
+
+
+def _wandb_log(run, metrics: dict[str, float], *, step: int) -> None:
+    if run is None:
+        return
+    metrics = {"step": int(step), **metrics}
+    run.log(metrics, step=int(step))
+
+
+def _finish_wandb(run, *, cfg: DictConfig, model_dir: Path) -> None:
+    if run is None:
+        return
+    if bool(cfg.train.wandb.get("log_model", False)):
+        import wandb
+
+        artifact = wandb.Artifact(f"{cfg.run_name}-model", type="model")
+        artifact.add_dir(str(model_dir))
+        run.log_artifact(artifact)
+    run.finish()
 
 
 def _meta(
