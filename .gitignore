@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual environments and local dependency state
+.venv/
+venv/
+.python-version
+
+# Hydra / experiment outputs
+outputs/
+multirun/
+
+# Data and model artifacts
+data/
+checkpoints/
+wandb/
+
+# Logs and scheduler output
+logs/
+*.out
+*.err
+*.log
+
+# Local caches
+.cache/
+hf_cache/
+uv_cache/
+
+# macOS / editor noise
+.DS_Store
+.idea/
+.vscode/
