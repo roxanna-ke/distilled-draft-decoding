@@ -145,7 +145,9 @@ def _forward_kl_topk(
         raise ValueError("teacher_topk_ids and teacher_topk_logp must have the same shape")
 
     # Student log-probs at teacher's top-k positions
-    student_log_probs = F.log_softmax(student_logits / temperature, dim=-1)  # [B, T, V]
+    # Cast to float32 before softmax for numerical stability (fp16 overflow).
+    orig_dtype = student_logits.dtype
+    student_log_probs = F.log_softmax((student_logits / temperature).float(), dim=-1)  # [B, T, V]
     student_topk_logp = student_log_probs.gather(2, teacher_topk_ids)  # [B, T, K]
 
     # Teacher probs (exp of logp)
@@ -156,4 +158,4 @@ def _forward_kl_topk(
     per_pos = (teacher_topk_p * (teacher_topk_logp - student_topk_logp)).sum(dim=-1)
 
     n_valid = mask.sum().clamp(min=1)
-    return (per_pos * mask).sum() / n_valid * (temperature ** 2)
+    return ((per_pos * mask).sum() / n_valid * (temperature ** 2)).to(orig_dtype)

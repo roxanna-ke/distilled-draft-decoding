@@ -46,8 +46,10 @@ def forward_kl(
         raise ValueError("temperature must be > 0 for forward KL")
 
     # Soften distributions with temperature.
-    log_p = F.log_softmax(teacher_logits / temperature, dim=-1)
-    log_q = F.log_softmax(student_logits / temperature, dim=-1)
+    # Cast to float32 before softmax for numerical stability (fp16 overflow).
+    orig_dtype = student_logits.dtype
+    log_p = F.log_softmax((teacher_logits / temperature).float(), dim=-1)
+    log_q = F.log_softmax((student_logits / temperature).float(), dim=-1)
     p = log_p.exp()
 
     # Per-position KL: sum over vocab of p * (log p - log q).
@@ -55,4 +57,4 @@ def forward_kl(
 
     # Apply mask and average
     n_valid = mask.sum().clamp(min=1)
-    return (per_pos_kl * mask).sum() / n_valid * (temperature ** 2)
+    return ((per_pos_kl * mask).sum() / n_valid * (temperature ** 2)).to(orig_dtype)

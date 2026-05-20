@@ -44,12 +44,16 @@ def jsd_loss(
     if temperature <= 0:
         raise ValueError("temperature must be > 0 for JSD")
 
-    p = F.softmax(teacher_logits / temperature, dim=-1)   # teacher
-    q = F.softmax(student_logits / temperature, dim=-1)   # student
+    # Cast to float32 before softmax for numerical stability (fp16 overflow).
+    orig_dtype = student_logits.dtype
+    t_teacher = (teacher_logits / temperature).float()
+    t_student = (student_logits / temperature).float()
+    p = F.softmax(t_teacher, dim=-1)   # teacher
+    q = F.softmax(t_student, dim=-1)   # student
     m = (p + q) / 2                                       # mixture
 
-    log_p = F.log_softmax(teacher_logits / temperature, dim=-1)
-    log_q = F.log_softmax(student_logits / temperature, dim=-1)
+    log_p = F.log_softmax(t_teacher, dim=-1)
+    log_q = F.log_softmax(t_student, dim=-1)
     log_m = torch.log(m.clamp_min(1e-12))
 
     # KL(p || m) = sum p * (log p - log m)
@@ -60,4 +64,4 @@ def jsd_loss(
     per_pos_jsd = 0.5 * kl_pm + 0.5 * kl_qm  # [B, T]
 
     n_valid = mask.sum().clamp(min=1)
-    return (per_pos_jsd * mask).sum() / n_valid * (temperature ** 2)
+    return ((per_pos_jsd * mask).sum() / n_valid * (temperature ** 2)).to(orig_dtype)
