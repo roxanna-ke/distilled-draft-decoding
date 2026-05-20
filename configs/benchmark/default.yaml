@@ -1,0 +1,3 @@
+# List of benchmark names from src/kdsd/eval/benchmarks/registry.py to run on
+# generations and write under quality_score.<name>. Empty list = skip scoring.
+benchmarks: []

@@ -1,0 +1,6 @@
+n_warmup: 1
+n_repeats: 3
+# Whether to run the vanilla baseline as part of this eval (sets vanilla_time_s).
+run_vanilla_baseline: true
+# Skip vanilla baseline forcibly (e.g. if you already measured it elsewhere).
+write_generations: true

@@ -1,0 +1,48 @@
+defaults:
+  - model: qwen25
+  - eval: default
+  - runtime: default
+  - benchmark: default
+  - _self_
+
+run_name: vanilla
+seed: 42
+
+# Optional path (local checkpoint dir) or HF id for the draft model. If null,
+# evaluation runs vanilla (target-only) inference and reports speedup=1.0.
+draft: null
+
+# Prompt source. Either a local jsonl path conforming to the data contract in
+# CLAUDE.md, or an HF dataset spec. Exactly one must be set.
+prompts:
+  jsonl: null            # e.g. data/processed/ultrachat_50k/eval.jsonl
+  hf_dataset: {
+    name: HuggingFaceH4/ultrachat_200k,
+    split: test_sft,
+    prompt_field: prompt
+  }
+  limit: 256               # cap number of prompts (null = all)
+
+# Eval outputs (eval_summary.json, generations.jsonl, timing.json, config.yaml).
+# Absolute path on the RunAI group scratch PVC, per rcp_support/README.md
+# §"Storage layout" — keeps results out of the repo and visible to teammates
+# and TAs through the group scratch mount. Anything under /scratch is wiped
+# end of July 2026.
+results_dir: /scratch/cs552-results/${run_name}
+
+# Where HF should cache models/datasets. notebooks/submit.sh exports
+# HF_HOME=/scratch/hf_cache on the RunAI pod, so this resolves to that path
+# inside the pod and to ~/.cache/huggingface elsewhere. Resolved into HF_HOME
+# *before* we import transformers/huggingface_hub, so it must be set via
+# Hydra config (not just os.environ at runtime).
+hf_cache: ${oc.env:HF_HOME,'~/.cache/huggingface'}
+
+# Hydra also writes its own per-job log/output directory. Keep it under cwd
+# (the repo clone, typically /scratch/<repo>) so logs sit alongside the code
+# while heavy eval artefacts go to results_dir under /scratch/cs552-results/.
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: outputs/sweeps/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}

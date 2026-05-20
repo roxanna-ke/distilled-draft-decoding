@@ -1,0 +1,5 @@
+mode: sampling            # greedy | sampling
+temperature: 1.0        # used only when mode=sampling (and also for SD draft sampling)
+top_p: 0.9
+gamma: 4                # number of speculative tokens per outer step
+max_new_tokens: 256
