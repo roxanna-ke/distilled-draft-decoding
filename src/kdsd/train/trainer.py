@@ -186,7 +186,7 @@ def train_kd(
         target.config.use_cache = False
 
     use_amp = bool(train_cfg.get("use_amp", False)) and device != "cpu"
-    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
     LOG.info("AMP enabled=%s (autocast + GradScaler)", use_amp)
 
     optimizer = torch.optim.AdamW(
@@ -224,7 +224,7 @@ def train_kd(
 
         while global_step < int(train_cfg.steps):
             batch = _to_device(next(train_iter), device)
-            with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.float16):
+            with torch.amp.autocast("cuda", enabled=use_amp, dtype=torch.float16):
                 metrics = _training_micro_step(
                     target=target,
                     draft=draft,
@@ -379,7 +379,7 @@ def evaluate_loss(
         if i >= max_batches:
             break
         batch = _to_device(batch, device)
-        with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.float16):
+        with torch.amp.autocast("cuda", enabled=use_amp, dtype=torch.float16):
             metrics = _forward_loss(
                 target=target,
                 draft=draft,
