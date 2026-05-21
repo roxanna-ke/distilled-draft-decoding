@@ -185,9 +185,15 @@ def train_kd(
     if hasattr(target.config, "use_cache"):
         target.config.use_cache = False
 
-    use_amp = bool(train_cfg.get("use_amp", False)) and device != "cpu"
-    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
-    LOG.info("AMP enabled=%s (autocast + GradScaler)", use_amp)
+    use_amp = bool(train_cfg.get("use_amp", False)) and str(device).startswith("cuda")
+    amp_dtype = _resolve_amp_dtype(str(train_cfg.get("amp_dtype", cfg.model.dtype)))
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp and amp_dtype is torch.float16)
+    LOG.info(
+        "AMP enabled=%s dtype=%s grad_scaler=%s",
+        use_amp,
+        str(amp_dtype).replace("torch.", ""),
+        scaler.is_enabled(),
+    )
 
     optimizer = torch.optim.AdamW(
         draft.parameters(),
@@ -224,7 +230,7 @@ def train_kd(
 
         while global_step < int(train_cfg.steps):
             batch = _to_device(next(train_iter), device)
-            with torch.amp.autocast("cuda", enabled=use_amp, dtype=torch.float16):
+            with torch.amp.autocast("cuda", enabled=use_amp, dtype=amp_dtype):
                 metrics = _training_micro_step(
                     target=target,
                     draft=draft,
@@ -286,6 +292,7 @@ def train_kd(
                     device=device,
                     max_batches=int(train_cfg.max_eval_batches),
                     use_amp=use_amp,
+                    amp_dtype=amp_dtype,
                 )
                 LOG.info(
                     "eval step=%d loss=%.4f ce=%.4f kd=%.4f",
@@ -371,6 +378,7 @@ def evaluate_loss(
     device: str,
     max_batches: int,
     use_amp: bool = False,
+    amp_dtype: torch.dtype = torch.bfloat16,
 ) -> dict[str, float]:
     was_training = draft.training
     draft.eval()
@@ -379,7 +387,7 @@ def evaluate_loss(
         if i >= max_batches:
             break
         batch = _to_device(batch, device)
-        with torch.amp.autocast("cuda", enabled=use_amp, dtype=torch.float16):
+        with torch.amp.autocast("cuda", enabled=use_amp, dtype=amp_dtype):
             metrics = _forward_loss(
                 target=target,
                 draft=draft,
@@ -598,6 +606,19 @@ def _git_sha() -> str | None:
 
 def _to_device(batch: dict[str, torch.Tensor], device: str) -> dict[str, torch.Tensor]:
     return {k: v.to(device, non_blocking=True) for k, v in batch.items()}
+
+
+def _resolve_amp_dtype(name: str) -> torch.dtype:
+    aliases = {
+        "bfloat16": torch.bfloat16,
+        "bf16": torch.bfloat16,
+        "float16": torch.float16,
+        "fp16": torch.float16,
+    }
+    key = name.lower()
+    if key not in aliases:
+        raise ValueError(f"train.amp_dtype must be one of {sorted(aliases)}, got {name!r}")
+    return aliases[key]
 
 
 def _mean_metrics(rows: list[dict[str, float]]) -> dict[str, float]:

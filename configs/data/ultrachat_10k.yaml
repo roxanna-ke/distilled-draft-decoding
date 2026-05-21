@@ -3,12 +3,12 @@ name: HuggingFaceH4/ultrachat_200k
 subset: null
 split: train_sft
 eval_split: test_sft
-source: ultrachat
-output_dir: data/processed/${data.id}
+source: target
+output_dir: data/target_generated/${data.id}
 train_size: 10000
 val_size: 500
 eval_size: 500
-shuffle: true
-overwrite: true
+shuffle: false
+overwrite: false
 min_prompt_chars: 1
 min_response_chars: 1
