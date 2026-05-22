@@ -44,6 +44,7 @@ CHECKPOINTS_DIR="${CHECKPOINTS_DIR:-${WORKSPACE_ROOT}/checkpoints}"
 DATA_DIR="${DATA_DIR:-${WORKSPACE_ROOT}/data}"
 HYDRA_OUTPUTS_DIR="${HYDRA_OUTPUTS_DIR:-${WORKSPACE_ROOT}/hydra}"
 WANDB_DIR="${WANDB_DIR:-${WORKSPACE_ROOT}/wandb}"
+LINK_ARTIFACT_DIRS="${LINK_ARTIFACT_DIRS:-false}"  # true: create repo-local symlinks to artifact dirs.
 
 TARGET_MODEL="${TARGET_MODEL:-Qwen/Qwen2.5-3B-Instruct}"
 DRAFT_MODEL="${DRAFT_MODEL:-Qwen/Qwen2.5-0.5B-Instruct}"
@@ -141,7 +142,7 @@ SHARED_RW_PVC="course-cs-552-shared-rw"
 read -r -d '' BOOTSTRAP_COMMAND <<'BOOTSTRAP' || true
 set -euo pipefail
 
-for required_name in SYNC_REPO REPO_DIR HF_HOME_DIR RESULTS_DIR WANDB_DIR CHECKPOINTS_DIR DATA_DIR HYDRA_OUTPUTS_DIR RUN_COMMAND_B64; do
+for required_name in SYNC_REPO REPO_DIR HF_HOME_DIR RESULTS_DIR WANDB_DIR CHECKPOINTS_DIR DATA_DIR HYDRA_OUTPUTS_DIR LINK_ARTIFACT_DIRS RUN_COMMAND_B64; do
   if [[ -z "${!required_name:-}" ]]; then
     echo "ERROR: ${required_name} is empty inside the pod." >&2
     exit 1
@@ -244,10 +245,15 @@ link_artifact_dir() {
   ln -s "${target}" "${name}"
 }
 
-link_artifact_dir checkpoints "${CHECKPOINTS_DIR}"
-link_artifact_dir data "${DATA_DIR}"
-link_artifact_dir outputs "${HYDRA_OUTPUTS_DIR}"
-link_artifact_dir wandb "${WANDB_DIR}"
+if [[ "${LINK_ARTIFACT_DIRS}" == "true" ]]; then
+  link_artifact_dir checkpoints "${CHECKPOINTS_DIR}"
+  link_artifact_dir data "${DATA_DIR}"
+  link_artifact_dir outputs "${HYDRA_OUTPUTS_DIR}"
+  link_artifact_dir wandb "${WANDB_DIR}"
+elif [[ "${LINK_ARTIFACT_DIRS}" != "false" ]]; then
+  echo "ERROR: LINK_ARTIFACT_DIRS must be true or false, got ${LINK_ARTIFACT_DIRS}" >&2
+  exit 1
+fi
 
 echo ">>> CUDA sanity check"
 python - <<'PY'
@@ -304,6 +310,7 @@ runai submit \
   --environment CHECKPOINTS_DIR="${CHECKPOINTS_DIR}" \
   --environment DATA_DIR="${DATA_DIR}" \
   --environment HYDRA_OUTPUTS_DIR="${HYDRA_OUTPUTS_DIR}" \
+  --environment LINK_ARTIFACT_DIRS="${LINK_ARTIFACT_DIRS}" \
   --environment RUN_COMMAND_B64="${RUN_COMMAND_B64}" \
   --environment BOOTSTRAP_B64="${BOOTSTRAP_B64}" \
   --existing-pvc "claimname=${SCRATCH_PVC},path=/scratch" \
