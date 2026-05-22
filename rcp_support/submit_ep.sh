@@ -277,6 +277,8 @@ printf '%s\n' "${RUN_COMMAND}"
 eval "${RUN_COMMAND}"
 BOOTSTRAP
 
+BOOTSTRAP_B64="$(printf '%s' "${BOOTSTRAP_COMMAND}" | base64 | tr -d '\n')"
+
 echo ">>> Submitting A100 bf16 training job ${JOB_NAME}"
 
 runai submit \
@@ -313,7 +315,7 @@ runai submit \
   --existing-pvc "claimname=${SCRATCH_PVC},path=/scratch" \
   --existing-pvc "claimname=${SHARED_RO_PVC},path=/shared-ro" \
   --existing-pvc "claimname=${SHARED_RW_PVC},path=/shared-rw" \
-  --command -- /bin/bash -lc "${BOOTSTRAP_COMMAND}"
+  --command -- /bin/bash -lc "set -euo pipefail; printf '%s' '${BOOTSTRAP_B64}' | base64 -d | /bin/bash"
 
 cat <<EOF
 
