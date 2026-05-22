@@ -15,11 +15,11 @@ GASPAR="${GASPAR:-ke}"              # EPFL GASPAR username.
 GROUP="${GROUP:-g67}"               # Team PVC id, e.g. g07.
 WANDB_MODE="${WANDB_MODE:-online}"  # online, offline, or disabled.
 
-REPO_URL="${REPO_URL:-https://github.com/CS-552/open-project-m2-shallowseek.git}"  # Used only when SYNC_REPO=true.
+REPO_URL="${REPO_URL:-https://github.com/roxanna-ke/distilled-draft-decoding.git}"  # Used only when SYNC_REPO=true.
 REPO_BRANCH="${REPO_BRANCH:-train}" # Used only when SYNC_REPO=true.
 SYNC_REPO="${SYNC_REPO:-false}"     # true: fetch/reset remote; false: use existing REPO_DIR as-is.
 WORKSPACE_ROOT="${WORKSPACE_ROOT:-/scratch/cs552-mnlp-kzy}"
-REPO_DIR="${REPO_DIR:-${WORKSPACE_ROOT}/repos/open-project-m2-shallowseek}"
+REPO_DIR="${REPO_DIR:-${WORKSPACE_ROOT}/repos/distilled-draft-decoding-train}"
 
 LOSSES="${LOSSES:-${LOSS:-fkl,rkl,jsd}}"
 LOSS_LIST="${LOSSES//,/ }"
