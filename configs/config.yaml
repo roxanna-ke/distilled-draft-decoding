@@ -1,6 +1,6 @@
 defaults:
   - model: qwen25
-  - data: ultrachat_10k
+  - data: ultrachat_50k
   - loss: fkl
   - train: default
   - eval: default
@@ -8,7 +8,7 @@ defaults:
   - benchmark: default
   - _self_
 
-run_name: kd_${loss.kind}_${data.id}_seed${seed}
+run_name: auto
 seed: 42
 output_dir: checkpoints/${run_name}
 
@@ -34,12 +34,27 @@ prompts:
 # end of July 2026.
 results_dir: /scratch/cs552-results/${run_name}
 
+# Heavy data artifacts live on the group scratch PVC. Processed text JSONL is
+# canonical; tokenized caches are disposable and fingerprinted by tokenizer and
+# preprocessing policy.
+data_root: /scratch/cs552-data
+
 # Where HF should cache models/datasets. notebooks/submit.sh exports
 # HF_HOME=/scratch/hf_cache on the RunAI pod, so this resolves to that path
 # inside the pod and to ~/.cache/huggingface elsewhere. Resolved into HF_HOME
 # *before* we import transformers/huggingface_hub, so it must be set via
 # Hydra config (not just os.environ at runtime).
 hf_cache: ${oc.env:HF_HOME,'~/.cache/huggingface'}
+
+# Optional W&B reporting. Training uses HF Trainer's W&B integration; eval uses
+# this block only when explicitly enabled.
+wandb:
+  enabled: true
+  project: ${oc.env:WANDB_PROJECT,cs552-kdsd}
+  entity: ${oc.env:WANDB_ENTITY,''}
+  dir: ${oc.env:WANDB_DIR,wandb}
+  mode: ${oc.env:WANDB_MODE,online}
+  resume: allow
 
 # Hydra also writes its own per-job log/output directory. Keep it under cwd
 # (the repo clone, typically /scratch/<repo>) so logs sit alongside the code

@@ -1,38 +1,29 @@
 # Python
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
-
-# Virtual environments and local dependency state
+*.egg-info/
 .venv/
-venv/
-.python-version
+.eggs/
 
-# Hydra / experiment outputs
-outputs/
-multirun/
+# uv
+.uv/
 
-# Data and model artifacts
-data/
-checkpoints/
-wandb/
+# Project artefacts (never commit)
+/data/
+/checkpoints/
+/results/
+/wandb/
+/outputs/
+/multirun/
+/report/
 
-# Logs and scheduler output
-logs/
-*.out
-*.err
-*.log
-
-# Local caches
+# HF / model caches
 .cache/
-hf_cache/
-uv_cache/
+*.safetensors
+*.bin
 
-# macOS / editor noise
+# Editor / OS
 .DS_Store
 .idea/
 .vscode/
+*.swp

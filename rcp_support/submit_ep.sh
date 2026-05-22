@@ -2,43 +2,67 @@
 # CS-552 Run:AI launcher for A100 bf16 KD training.
 #
 # Submit from your laptop:
-#   GASPAR=kzy GROUP=g67 ./rcp_support/submit_ep.sh fkl10k
+#   GASPAR=ke GROUP=g67 ./rcp_support/submit_ep.sh losses10k
 #
 # Useful overrides:
-#   LOSS=jsd DATASET=ultrachat_10k TRAIN_STEPS=4000 ./rcp_support/submit_ep.sh jsd10k
+#   LOSSES=fkl,rkl,jsd DATASET=ultrachat_50k MAX_STEPS=8000 ./rcp_support/submit_ep.sh losses50k
 #   WANDB_MODE=offline ./rcp_support/submit_ep.sh debug
 
 set -euo pipefail
 
 # ============== EDIT / OVERRIDE THESE ==============
-GASPAR="${GASPAR:-kzy}"             # EPFL GASPAR username.
+GASPAR="${GASPAR:-ke}"              # EPFL GASPAR username.
 GROUP="${GROUP:-g67}"               # Team PVC id, e.g. g07.
-WANDB_MODE="${WANDB_MODE:-offline}" # online, offline, or disabled.
+WANDB_MODE="${WANDB_MODE:-online}"  # online, offline, or disabled.
 
-REPO_URL="${REPO_URL:-https://github.com/roxanna-ke/distilled-draft-decoding.git}"
-REPO_BRANCH="${REPO_BRANCH:-main}"
-SYNC_REPO="${SYNC_REPO:-true}"      # true: fetch/reset remote; false: use existing REPO_DIR as-is.
+REPO_URL="${REPO_URL:-https://github.com/CS-552/open-project-m2-shallowseek.git}"  # Used only when SYNC_REPO=true.
+REPO_BRANCH="${REPO_BRANCH:-train}" # Used only when SYNC_REPO=true.
+SYNC_REPO="${SYNC_REPO:-false}"     # true: fetch/reset remote; false: use existing REPO_DIR as-is.
 WORKSPACE_ROOT="${WORKSPACE_ROOT:-/scratch/cs552-mnlp-kzy}"
-REPO_DIR="${REPO_DIR:-${WORKSPACE_ROOT}/repos/distilled-draft-decoding}"
+REPO_DIR="${REPO_DIR:-${WORKSPACE_ROOT}/repos/open-project-m2-shallowseek}"
 
-LOSS="${LOSS:-fkl}"
-DATASET="${DATASET:-ultrachat_10k}"
-TRAIN_STEPS="${TRAIN_STEPS:-1000}"
-MAX_LENGTH="${MAX_LENGTH:-1024}"
-BATCH_SIZE="${BATCH_SIZE:-1}"
-GRAD_ACCUM="${GRAD_ACCUM:-16}"
+LOSSES="${LOSSES:-${LOSS:-fkl,rkl,jsd}}"
+LOSS_LIST="${LOSSES//,/ }"
+DATASET="${DATASET:-ultrachat_50k}"
+MAX_STEPS="${MAX_STEPS:-8000}"
+MAX_SEQ_LEN="${MAX_SEQ_LEN:-512}"
+PER_DEVICE_TRAIN_BATCH_SIZE="${PER_DEVICE_TRAIN_BATCH_SIZE:-2}"
+PER_DEVICE_EVAL_BATCH_SIZE="${PER_DEVICE_EVAL_BATCH_SIZE:-4}"
+GRAD_ACCUM="${GRAD_ACCUM:-4}"
 LEARNING_RATE="${LEARNING_RATE:-2e-5}"
-KD_ALPHA="${KD_ALPHA:-0.5}"
-KD_TEMPERATURE="${KD_TEMPERATURE:-1.0}"
+WEIGHT_DECAY="${WEIGHT_DECAY:-0.0}"
+WARMUP_RATIO="${WARMUP_RATIO:-0.03}"
+LR_SCHEDULER_TYPE="${LR_SCHEDULER_TYPE:-cosine}"
+KD_ALPHA="${KD_ALPHA:-1.0}"
+KD_TEMPERATURE="${KD_TEMPERATURE:-2.0}"
 SEED="${SEED:-42}"
-RUN_NAME="${RUN_NAME:-kd_${LOSS}_${DATASET}_targetgen_bf16_seed${SEED}}"
+RUN_NAME_SUFFIX="${RUN_NAME_SUFFIX:-ultra50k_s8000_seq512_a1_temp2}"
 
 HF_HOME_DIR="${HF_HOME_DIR:-${WORKSPACE_ROOT}/hf_cache}"
-RESULTS_DIR="${RESULTS_DIR:-${WORKSPACE_ROOT}/logs/results}"
+RESULTS_DIR="${RESULTS_DIR:-${WORKSPACE_ROOT}/results}"
 CHECKPOINTS_DIR="${CHECKPOINTS_DIR:-${WORKSPACE_ROOT}/checkpoints}"
 DATA_DIR="${DATA_DIR:-${WORKSPACE_ROOT}/data}"
 HYDRA_OUTPUTS_DIR="${HYDRA_OUTPUTS_DIR:-${WORKSPACE_ROOT}/hydra}"
 WANDB_DIR="${WANDB_DIR:-${WORKSPACE_ROOT}/wandb}"
+
+TARGET_MODEL="${TARGET_MODEL:-Qwen/Qwen2.5-3B-Instruct}"
+DRAFT_MODEL="${DRAFT_MODEL:-Qwen/Qwen2.5-0.5B-Instruct}"
+MODEL_DTYPE="${MODEL_DTYPE:-bfloat16}"
+ATTN_IMPL="${ATTN_IMPL:-sdpa}"
+
+N_SAMPLES="${N_SAMPLES:-50000}"
+VAL_SAMPLES="${VAL_SAMPLES:-512}"
+EVAL_SAMPLES="${EVAL_SAMPLES:-256}"
+HF_DATASET_NAME="${HF_DATASET_NAME:-HuggingFaceH4/ultrachat_200k}"
+HF_DATASET_SPLIT="${HF_DATASET_SPLIT:-train_sft}"
+
+LOGGING_STEPS="${LOGGING_STEPS:-10}"
+SAVE_STEPS="${SAVE_STEPS:-2000}"
+EVAL_STEPS="${EVAL_STEPS:-2000}"
+SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-4}"
+DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-2}"
+OVERFIT_SAMPLES="${OVERFIT_SAMPLES:-0}"
+RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-null}"
 # ===================================================
 
 if [[ "${GASPAR}" == "gaspar" || -z "${GASPAR}" ]]; then
@@ -56,24 +80,56 @@ if [[ "${WANDB_MODE}" == "online" && -z "${WANDB_API_KEY:-}" ]]; then
   exit 1
 fi
 
-RUN_COMMAND="${RUN_COMMAND:-python scripts/train.py \
-  loss=${LOSS} data=${DATASET} seed=${SEED} run_name=${RUN_NAME} \
-  model.device=cuda model.dtype=bfloat16 \
-  train.use_amp=true train.amp_dtype=bfloat16 \
-  loss.alpha=${KD_ALPHA} loss.temperature=${KD_TEMPERATURE} \
-  train.steps=${TRAIN_STEPS} train.max_length=${MAX_LENGTH} \
-  train.batch_size=${BATCH_SIZE} train.gradient_accumulation_steps=${GRAD_ACCUM} \
-  train.learning_rate=${LEARNING_RATE} \
-  train.output_dir=${CHECKPOINTS_DIR}/${RUN_NAME} \
-  train.wandb.enabled=true train.wandb.project=${WANDB_PROJECT:-cs552-kdsd} \
-  train.wandb.mode=${WANDB_MODE}
-}"
+if [[ -z "${RUN_COMMAND:-}" ]]; then
+  read -r -d '' RUN_COMMAND <<EOF || true
+for loss_name in ${LOSS_LIST}; do
+  run_name="\${loss_name}_${RUN_NAME_SUFFIX}"
+  echo ">>> Starting training: loss=\${loss_name} run_name=\${run_name}"
+  python scripts/train.py \\
+    loss="\${loss_name}" data="${DATASET}" seed="${SEED}" run_name="\${run_name}" \\
+    output_dir="${CHECKPOINTS_DIR}/\${run_name}" \\
+    results_dir="${RESULTS_DIR}/\${run_name}" \\
+    data_root="${DATA_DIR}" \\
+    hf_cache="${HF_HOME_DIR}" \\
+    hydra.run.dir="${HYDRA_OUTPUTS_DIR}/\${run_name}" \\
+    model.target="${TARGET_MODEL}" model.draft_default="${DRAFT_MODEL}" \\
+    model.device=cuda model.dtype="${MODEL_DTYPE}" model.attn_impl="${ATTN_IMPL}" \\
+    model.trust_remote_code=false \\
+    data.response_source=original data.n_samples="${N_SAMPLES}" \\
+    data.val_samples="${VAL_SAMPLES}" data.eval_samples="${EVAL_SAMPLES}" \\
+    data.max_seq_len="${MAX_SEQ_LEN}" \\
+    data.hf_dataset.name="${HF_DATASET_NAME}" data.hf_dataset.split="${HF_DATASET_SPLIT}" \\
+    loss.alpha="${KD_ALPHA}" loss.temperature="${KD_TEMPERATURE}" \\
+    train.max_steps="${MAX_STEPS}" train.num_train_epochs=1 \\
+    train.per_device_train_batch_size="${PER_DEVICE_TRAIN_BATCH_SIZE}" \\
+    train.per_device_eval_batch_size="${PER_DEVICE_EVAL_BATCH_SIZE}" \\
+    train.gradient_accumulation_steps="${GRAD_ACCUM}" \\
+    train.learning_rate="${LEARNING_RATE}" train.weight_decay="${WEIGHT_DECAY}" \\
+    train.warmup_ratio="${WARMUP_RATIO}" train.lr_scheduler_type="${LR_SCHEDULER_TYPE}" \\
+    train.logging_steps="${LOGGING_STEPS}" train.save_steps="${SAVE_STEPS}" \\
+    train.eval_steps="${EVAL_STEPS}" train.save_total_limit="${SAVE_TOTAL_LIMIT}" \\
+    ++train.load_best_model_at_end=true ++train.metric_for_best_model=eval_loss \\
+    ++train.greater_is_better=false ++train.save_best_model=true \\
+    train.bf16=true train.fp16=false train.gradient_checkpointing=true \\
+    train.dataloader_drop_last=true train.dataloader_num_workers="${DATALOADER_NUM_WORKERS}" \\
+    train.remove_unused_columns=false train.report_to_wandb=true \\
+    train.resume_from_checkpoint="${RESUME_FROM_CHECKPOINT}" \\
+    train.overfit_samples="${OVERFIT_SAMPLES}" train.compile_target=false \\
+    eval.n_warmup=1 eval.n_repeats=3 eval.run_vanilla_baseline=true eval.write_generations=true \\
+    runtime.mode=sampling runtime.temperature=1.0 runtime.top_p=0.9 \\
+    runtime.gamma=4 runtime.max_new_tokens=256 \\
+    wandb.enabled=true wandb.project="${WANDB_PROJECT:-cs552-kdsd}" \\
+    wandb.dir="${WANDB_DIR}" wandb.mode="${WANDB_MODE}"
+  echo ">>> Finished training: loss=\${loss_name} run_name=\${run_name}"
+done
+EOF
+fi
 
 RUN_COMMAND_B64="$(printf '%s' "${RUN_COMMAND}" | base64 | tr -d '\n')"
 
 GPUS=1
 NODE="${NODE:-a100-40g}"
-SUFFIX="${1:-train}"
+SUFFIX="${1:-train-temp2}"
 JOB_NAME="cs552-${GASPAR}-${GROUP}-${SUFFIX}-$(date +%H%M%S)"
 PROJECT="course-cs-552-${GASPAR}"
 IMAGE="registry.rcp.epfl.ch/course-cs-552/base-vllm:v1"
@@ -85,7 +141,7 @@ SHARED_RW_PVC="course-cs-552-shared-rw"
 read -r -d '' BOOTSTRAP_COMMAND <<'BOOTSTRAP' || true
 set -euo pipefail
 
-for required_name in REPO_URL REPO_BRANCH SYNC_REPO REPO_DIR HF_HOME_DIR RESULTS_DIR WANDB_DIR CHECKPOINTS_DIR DATA_DIR HYDRA_OUTPUTS_DIR RUN_COMMAND_B64; do
+for required_name in SYNC_REPO REPO_DIR HF_HOME_DIR RESULTS_DIR WANDB_DIR CHECKPOINTS_DIR DATA_DIR HYDRA_OUTPUTS_DIR RUN_COMMAND_B64; do
   if [[ -z "${!required_name:-}" ]]; then
     echo "ERROR: ${required_name} is empty inside the pod." >&2
     exit 1
@@ -131,6 +187,13 @@ configure_git_safe_directory() {
 configure_git_safe_directory
 
 if [[ "${SYNC_REPO}" == "true" ]]; then
+  for required_name in REPO_URL REPO_BRANCH; do
+    if [[ -z "${!required_name:-}" ]]; then
+      echo "ERROR: ${required_name} is empty inside the pod." >&2
+      exit 1
+    fi
+  done
+
   if ! git ls-remote --exit-code --heads "${REPO_URL}" "${REPO_BRANCH}" >/dev/null; then
     echo "ERROR: cannot read branch ${REPO_BRANCH} from ${REPO_URL}" >&2
     exit 1
@@ -153,12 +216,16 @@ if [[ "${SYNC_REPO}" == "true" ]]; then
   git reset --hard "origin/${REPO_BRANCH}"
   git clean -ffd
 elif [[ "${SYNC_REPO}" == "false" ]]; then
-  if [[ ! -d "${REPO_DIR}/.git" ]]; then
-    echo "ERROR: SYNC_REPO=false requires an existing git checkout at ${REPO_DIR}" >&2
+  if [[ ! -d "${REPO_DIR}" ]]; then
+    echo "ERROR: SYNC_REPO=false requires an existing repo directory at ${REPO_DIR}" >&2
+    exit 1
+  fi
+  if [[ ! -f "${REPO_DIR}/scripts/train.py" ]]; then
+    echo "ERROR: ${REPO_DIR} does not look like the training repo; missing scripts/train.py" >&2
     exit 1
   fi
   cd "${REPO_DIR}"
-  echo ">>> Using existing checkout at ${REPO_DIR}"
+  echo ">>> Using existing repo directory at ${REPO_DIR}"
 else
   echo "ERROR: SYNC_REPO must be true or false, got ${SYNC_REPO}" >&2
   exit 1
@@ -193,7 +260,11 @@ if torch.cuda.is_available():
         raise SystemExit("bf16 is not supported by this GPU; request NODE=a100-40g")
 PY
 
-echo ">>> Checked out ${REPO_BRANCH} at $(git rev-parse HEAD)"
+if [[ -d .git ]] && command -v git >/dev/null 2>&1; then
+  echo ">>> Repo commit: $(git rev-parse HEAD)"
+else
+  echo ">>> Repo source: existing directory without git metadata"
+fi
 echo ">>> Personal workspace: $(dirname "${REPO_DIR}")"
 echo ">>> Running command:"
 printf '%s\n' "${RUN_COMMAND}"
@@ -222,7 +293,7 @@ runai submit \
   --environment WANDB_DIR="${WANDB_DIR}" \
   --environment WANDB_MODE="${WANDB_MODE}" \
   --environment WANDB_PROJECT="${WANDB_PROJECT:-cs552-kdsd}" \
-  --environment WANDB_NAME="${RUN_NAME}" \
+  --environment WANDB_NAME="${JOB_NAME}" \
   --environment WANDB_ENTITY="${WANDB_ENTITY:-}" \
   --environment WANDB_API_KEY="${WANDB_API_KEY:-}" \
   --environment REPO_URL="${REPO_URL}" \

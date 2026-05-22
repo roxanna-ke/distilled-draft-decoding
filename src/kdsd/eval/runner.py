@@ -195,7 +195,11 @@ def run_hf_eval(
         if (vanilla_time_s and vanilla_time_s > 0 and vanilla_tokens > 0)
         else float("nan")
     )
-    speedup = (sd_tps / vanilla_tps) if (vanilla_tps and vanilla_tps > 0) else 1.0
+    speedup = (
+        vanilla_time_s / sd_total_s
+        if (vanilla_time_s and vanilla_time_s > 0 and sd_total_s > 0)
+        else 1.0
+    )
 
     agg = aggregate_sd_stats(
         sd_stats, gamma=int(runtime["gamma"]) if draft is not None else None

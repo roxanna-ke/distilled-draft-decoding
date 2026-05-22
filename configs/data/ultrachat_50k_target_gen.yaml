@@ -1,6 +1,7 @@
-id: ultrachat_50k
+id: ultrachat_50k_target_gen
+base_id: ultrachat_50k
 family: ultrachat
-response_source: original
+response_source: target_generated
 n_samples: 50000
 val_samples: 512
 eval_samples: 256
@@ -10,11 +11,11 @@ hf_dataset:
   name: HuggingFaceH4/ultrachat_200k
   split: train_sft
 
-processed_dir: ${data_root}/processed/${data.id}
-target_generated_dir: ${data_root}/target_generated/${data.id}
+processed_dir: ${data_root}/processed/${data.base_id}
+target_generated_dir: ${data_root}/target_generated/${data.base_id}
 tokenized_cache_dir: ${data_root}/tokenized
-train_path: ${data.processed_dir}/train.jsonl
-val_path: ${data.processed_dir}/val.jsonl
+train_path: ${data.target_generated_dir}/train.jsonl
+val_path: ${data.target_generated_dir}/val.jsonl
 eval_path: ${data.processed_dir}/eval.jsonl
 
 target_generation:

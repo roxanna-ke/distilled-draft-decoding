@@ -1,41 +1,32 @@
-draft_init: pretrained   # pretrained | HF id | local checkpoint path
+draft_init: ${model.draft_default}
 
-# Text-level data produced by scripts/prepare_data.py.
-train_path: ${data.output_dir}/train.jsonl
-val_path: ${data.output_dir}/val.jsonl
-
-# Checkpoint contract: ${train.output_dir}/model is loadable by evaluate_sd.py.
-output_dir: checkpoints/${run_name}
-resume_from: null
-
-max_length: 1024
-add_eos: true
-
-steps: 1000              # optimizer steps, not micro-batches
-batch_size: 1
-gradient_accumulation_steps: 16
+# HF Trainer arguments. Keep these conservative for a single 40GB A100; override
+# from the CLI for ablations and smoke jobs.
+max_steps: 4000
+num_train_epochs: 1
+per_device_train_batch_size: 4
+per_device_eval_batch_size: 4
+gradient_accumulation_steps: 2
 learning_rate: 2.0e-5
 weight_decay: 0.0
-warmup_steps: 50
-max_grad_norm: 1.0
-
-num_workers: 0
-log_steps: 10
-eval_steps: 100
+warmup_ratio: 0.03
+lr_scheduler_type: cosine
+logging_steps: 10
 save_steps: 500
-max_eval_batches: 32
-
+eval_steps: 500
+save_total_limit: 2
+bf16: true
+fp16: false
 gradient_checkpointing: true
-save_optimizer: false
-# A100 supports bf16 natively. Keep model weights and autocast in bf16 by
-# default; GradScaler is only used for fp16.
-use_amp: true
-amp_dtype: bfloat16
+dataloader_drop_last: true
+dataloader_num_workers: 2
+remove_unused_columns: false
+report_to_wandb: true
+resume_from_checkpoint: null
 
-wandb:
-  enabled: false
-  project: ${oc.env:WANDB_PROJECT,kdsd}
-  entity: ${oc.env:WANDB_ENTITY,null}
-  tags: []
-  mode: ${oc.env:WANDB_MODE,online}
-  log_model: false
+# Debug-only: restrict the train split to N examples so max_steps repeatedly
+# revisits a tiny fixed set. Use 0 for normal training.
+overfit_samples: 0
+
+# Frozen target forward options.
+compile_target: false
