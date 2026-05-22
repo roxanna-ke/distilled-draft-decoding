@@ -187,6 +187,8 @@ chmod +x rcp_support/train_ep_pod.sh 2>/dev/null || true
 exec bash rcp_support/train_ep_pod.sh
 POD
 
+POD_COMMAND_B64="$(printf '%s' "${POD_COMMAND}" | base64 | tr -d '\n')"
+
 echo ">>> Submitting A100 bf16 training job ${JOB_NAME}"
 
 runai submit \
@@ -253,7 +255,7 @@ runai submit \
   --existing-pvc "claimname=${SCRATCH_PVC},path=/scratch" \
   --existing-pvc "claimname=${SHARED_RO_PVC},path=/shared-ro" \
   --existing-pvc "claimname=${SHARED_RW_PVC},path=/shared-rw" \
-  --command -- /bin/bash -lc "${POD_COMMAND}"
+  --command -- /bin/bash -lc "set -euo pipefail; printf '%s' '${POD_COMMAND_B64}' | base64 -d | /bin/bash"
 
 cat <<EOF
 
