@@ -17,7 +17,7 @@ WANDB_MODE="${WANDB_MODE:-online}"  # online, offline, or disabled.
 
 REPO_URL="${REPO_URL:-https://github.com/roxanna-ke/distilled-draft-decoding.git}"  # Used only when SYNC_REPO=true.
 REPO_BRANCH="${REPO_BRANCH:-train}" # Used only when SYNC_REPO=true.
-SYNC_REPO="${SYNC_REPO:-false}"     # true: fetch/reset remote; false: use existing REPO_DIR as-is.
+SYNC_REPO="${SYNC_REPO:-true}"     # true: fetch/reset remote; false: use existing REPO_DIR as-is.
 WORKSPACE_ROOT="${WORKSPACE_ROOT:-/scratch/cs552-mnlp-kzy}"
 REPO_DIR="${REPO_DIR:-${WORKSPACE_ROOT}/repos/distilled-draft-decoding-train}"
 
@@ -81,53 +81,6 @@ if [[ "${WANDB_MODE}" == "online" && -z "${WANDB_API_KEY:-}" ]]; then
   exit 1
 fi
 
-if [[ -z "${RUN_COMMAND:-}" ]]; then
-  read -r -d '' RUN_COMMAND <<EOF || true
-for loss_name in ${LOSS_LIST}; do
-  run_name="\${loss_name}_${RUN_NAME_SUFFIX}"
-  echo ">>> Starting training: loss=\${loss_name} run_name=\${run_name}"
-  python scripts/train.py \\
-    loss="\${loss_name}" data="${DATASET}" seed="${SEED}" run_name="\${run_name}" \\
-    output_dir="${CHECKPOINTS_DIR}/\${run_name}" \\
-    results_dir="${RESULTS_DIR}/\${run_name}" \\
-    data_root="${DATA_DIR}" \\
-    hf_cache="${HF_HOME_DIR}" \\
-    hydra.run.dir="${HYDRA_OUTPUTS_DIR}/\${run_name}" \\
-    model.target="${TARGET_MODEL}" model.draft_default="${DRAFT_MODEL}" \\
-    model.device=cuda model.dtype="${MODEL_DTYPE}" model.attn_impl="${ATTN_IMPL}" \\
-    model.trust_remote_code=false \\
-    data.response_source=original data.n_samples="${N_SAMPLES}" \\
-    data.val_samples="${VAL_SAMPLES}" data.eval_samples="${EVAL_SAMPLES}" \\
-    data.max_seq_len="${MAX_SEQ_LEN}" \\
-    data.hf_dataset.name="${HF_DATASET_NAME}" data.hf_dataset.split="${HF_DATASET_SPLIT}" \\
-    loss.alpha="${KD_ALPHA}" loss.temperature="${KD_TEMPERATURE}" \\
-    train.max_steps="${MAX_STEPS}" train.num_train_epochs=1 \\
-    train.per_device_train_batch_size="${PER_DEVICE_TRAIN_BATCH_SIZE}" \\
-    train.per_device_eval_batch_size="${PER_DEVICE_EVAL_BATCH_SIZE}" \\
-    train.gradient_accumulation_steps="${GRAD_ACCUM}" \\
-    train.learning_rate="${LEARNING_RATE}" train.weight_decay="${WEIGHT_DECAY}" \\
-    train.warmup_ratio="${WARMUP_RATIO}" train.lr_scheduler_type="${LR_SCHEDULER_TYPE}" \\
-    train.logging_steps="${LOGGING_STEPS}" train.save_steps="${SAVE_STEPS}" \\
-    train.eval_steps="${EVAL_STEPS}" train.save_total_limit="${SAVE_TOTAL_LIMIT}" \\
-    ++train.load_best_model_at_end=true ++train.metric_for_best_model=eval_loss \\
-    ++train.greater_is_better=false ++train.save_best_model=true \\
-    train.bf16=true train.fp16=false train.gradient_checkpointing=true \\
-    train.dataloader_drop_last=true train.dataloader_num_workers="${DATALOADER_NUM_WORKERS}" \\
-    train.remove_unused_columns=false train.report_to_wandb=true \\
-    train.resume_from_checkpoint="${RESUME_FROM_CHECKPOINT}" \\
-    train.overfit_samples="${OVERFIT_SAMPLES}" train.compile_target=false \\
-    eval.n_warmup=1 eval.n_repeats=3 eval.run_vanilla_baseline=true eval.write_generations=true \\
-    runtime.mode=sampling runtime.temperature=1.0 runtime.top_p=0.9 \\
-    runtime.gamma=4 runtime.max_new_tokens=256 \\
-    wandb.enabled=true wandb.project="${WANDB_PROJECT:-cs552-kdsd}" \\
-    wandb.dir="${WANDB_DIR}" wandb.mode="${WANDB_MODE}"
-  echo ">>> Finished training: loss=\${loss_name} run_name=\${run_name}"
-done
-EOF
-fi
-
-RUN_COMMAND_B64="$(printf '%s' "${RUN_COMMAND}" | base64 | tr -d '\n')"
-
 GPUS=1
 NODE="${NODE:-a100-40g}"
 SUFFIX="${1:-train-temp2}"
@@ -139,17 +92,15 @@ SCRATCH_PVC="course-cs-552-scratch-${GROUP}"
 SHARED_RO_PVC="course-cs-552-shared-ro"
 SHARED_RW_PVC="course-cs-552-shared-rw"
 
-read -r -d '' BOOTSTRAP_COMMAND <<'BOOTSTRAP' || true
+read -r -d '' POD_COMMAND <<'POD' || true
 set -euo pipefail
 
-for required_name in SYNC_REPO REPO_DIR HF_HOME_DIR RESULTS_DIR WANDB_DIR CHECKPOINTS_DIR DATA_DIR HYDRA_OUTPUTS_DIR LINK_ARTIFACT_DIRS RUN_COMMAND_B64; do
+for required_name in SYNC_REPO REPO_DIR HF_HOME_DIR RESULTS_DIR WANDB_DIR CHECKPOINTS_DIR DATA_DIR HYDRA_OUTPUTS_DIR LINK_ARTIFACT_DIRS; do
   if [[ -z "${!required_name:-}" ]]; then
     echo "ERROR: ${required_name} is empty inside the pod." >&2
     exit 1
   fi
 done
-
-RUN_COMMAND="$(printf '%s' "${RUN_COMMAND_B64}" | base64 -d)"
 
 mkdir -p \
   "${HF_HOME_DIR}" \
@@ -232,52 +183,9 @@ else
   exit 1
 fi
 
-link_artifact_dir() {
-  local name="$1"
-  local target="$2"
-  if [[ -L "${name}" ]]; then
-    rm "${name}"
-  elif [[ -e "${name}" ]]; then
-    echo "ERROR: ${REPO_DIR}/${name} exists and is not a symlink." >&2
-    exit 1
-  fi
-  mkdir -p "${target}"
-  ln -s "${target}" "${name}"
-}
-
-if [[ "${LINK_ARTIFACT_DIRS}" == "true" ]]; then
-  link_artifact_dir checkpoints "${CHECKPOINTS_DIR}"
-  link_artifact_dir data "${DATA_DIR}"
-  link_artifact_dir outputs "${HYDRA_OUTPUTS_DIR}"
-  link_artifact_dir wandb "${WANDB_DIR}"
-elif [[ "${LINK_ARTIFACT_DIRS}" != "false" ]]; then
-  echo "ERROR: LINK_ARTIFACT_DIRS must be true or false, got ${LINK_ARTIFACT_DIRS}" >&2
-  exit 1
-fi
-
-echo ">>> CUDA sanity check"
-python - <<'PY'
-import torch
-print("cuda_available=", torch.cuda.is_available())
-if torch.cuda.is_available():
-    print("gpu=", torch.cuda.get_device_name(0))
-    print("bf16_supported=", torch.cuda.is_bf16_supported())
-    if not torch.cuda.is_bf16_supported():
-        raise SystemExit("bf16 is not supported by this GPU; request NODE=a100-40g")
-PY
-
-if [[ -d .git ]] && command -v git >/dev/null 2>&1; then
-  echo ">>> Repo commit: $(git rev-parse HEAD)"
-else
-  echo ">>> Repo source: existing directory without git metadata"
-fi
-echo ">>> Personal workspace: $(dirname "${REPO_DIR}")"
-echo ">>> Running command:"
-printf '%s\n' "${RUN_COMMAND}"
-eval "${RUN_COMMAND}"
-BOOTSTRAP
-
-BOOTSTRAP_B64="$(printf '%s' "${BOOTSTRAP_COMMAND}" | base64 | tr -d '\n')"
+chmod +x rcp_support/train_ep_pod.sh 2>/dev/null || true
+exec bash rcp_support/train_ep_pod.sh
+POD
 
 echo ">>> Submitting A100 bf16 training job ${JOB_NAME}"
 
@@ -306,16 +214,46 @@ runai submit \
   --environment REPO_BRANCH="${REPO_BRANCH}" \
   --environment SYNC_REPO="${SYNC_REPO}" \
   --environment REPO_DIR="${REPO_DIR}" \
+  --environment LOSSES="${LOSSES}" \
+  --environment DATASET="${DATASET}" \
+  --environment MAX_STEPS="${MAX_STEPS}" \
+  --environment MAX_SEQ_LEN="${MAX_SEQ_LEN}" \
+  --environment PER_DEVICE_TRAIN_BATCH_SIZE="${PER_DEVICE_TRAIN_BATCH_SIZE}" \
+  --environment PER_DEVICE_EVAL_BATCH_SIZE="${PER_DEVICE_EVAL_BATCH_SIZE}" \
+  --environment GRAD_ACCUM="${GRAD_ACCUM}" \
+  --environment LEARNING_RATE="${LEARNING_RATE}" \
+  --environment WEIGHT_DECAY="${WEIGHT_DECAY}" \
+  --environment WARMUP_RATIO="${WARMUP_RATIO}" \
+  --environment LR_SCHEDULER_TYPE="${LR_SCHEDULER_TYPE}" \
+  --environment KD_ALPHA="${KD_ALPHA}" \
+  --environment KD_TEMPERATURE="${KD_TEMPERATURE}" \
+  --environment SEED="${SEED}" \
+  --environment RUN_NAME_SUFFIX="${RUN_NAME_SUFFIX}" \
+  --environment TARGET_MODEL="${TARGET_MODEL}" \
+  --environment DRAFT_MODEL="${DRAFT_MODEL}" \
+  --environment MODEL_DTYPE="${MODEL_DTYPE}" \
+  --environment ATTN_IMPL="${ATTN_IMPL}" \
+  --environment N_SAMPLES="${N_SAMPLES}" \
+  --environment VAL_SAMPLES="${VAL_SAMPLES}" \
+  --environment EVAL_SAMPLES="${EVAL_SAMPLES}" \
+  --environment HF_DATASET_NAME="${HF_DATASET_NAME}" \
+  --environment HF_DATASET_SPLIT="${HF_DATASET_SPLIT}" \
+  --environment LOGGING_STEPS="${LOGGING_STEPS}" \
+  --environment SAVE_STEPS="${SAVE_STEPS}" \
+  --environment EVAL_STEPS="${EVAL_STEPS}" \
+  --environment SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT}" \
+  --environment DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS}" \
+  --environment OVERFIT_SAMPLES="${OVERFIT_SAMPLES}" \
+  --environment RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT}" \
   --environment RESULTS_DIR="${RESULTS_DIR}" \
   --environment CHECKPOINTS_DIR="${CHECKPOINTS_DIR}" \
   --environment DATA_DIR="${DATA_DIR}" \
   --environment HYDRA_OUTPUTS_DIR="${HYDRA_OUTPUTS_DIR}" \
   --environment LINK_ARTIFACT_DIRS="${LINK_ARTIFACT_DIRS}" \
-  --environment RUN_COMMAND_B64="${RUN_COMMAND_B64}" \
   --existing-pvc "claimname=${SCRATCH_PVC},path=/scratch" \
   --existing-pvc "claimname=${SHARED_RO_PVC},path=/shared-ro" \
   --existing-pvc "claimname=${SHARED_RW_PVC},path=/shared-rw" \
-  --command -- /bin/bash -lc "set -euo pipefail; printf '%s' '${BOOTSTRAP_B64}' | base64 -d | /bin/bash"
+  --command -- /bin/bash -lc "${POD_COMMAND}"
 
 cat <<EOF
 
@@ -326,6 +264,6 @@ Stream logs:       runai logs -f ${JOB_NAME} -p ${PROJECT}
 List jobs:         runai list jobs -p ${PROJECT}
 Stop the job:      runai delete job ${JOB_NAME} -p ${PROJECT}
 
-Default command:
-${RUN_COMMAND}
+Training entrypoint:
+rcp_support/train_ep_pod.sh
 EOF
