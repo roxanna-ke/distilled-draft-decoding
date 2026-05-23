@@ -1,5 +1,5 @@
 #!/bin/bash
-# Loop over pretrained/fkl/rkl/jsd draft models and run SD evaluation with W&B.
+# Run SD evaluation with W&B for one or more draft models.
 #
 # Run inside the Run:AI pod after checkpoints are available, for example:
 #   cd /scratch/cs552-mnlp-kzy/repos/distilled-draft-decoding-train
@@ -24,7 +24,7 @@ MODEL_DTYPE="${MODEL_DTYPE:-bfloat16}"
 ATTN_IMPL="${ATTN_IMPL:-sdpa}"
 SEED="${SEED:-42}"
 
-EVAL_DRAFTS="${EVAL_DRAFTS:-pretrained,fkl,rkl,jsd}"
+EVAL_DRAFTS="${EVAL_DRAFTS:-fkl}"
 EVAL_PROMPTS_JSONL="${EVAL_PROMPTS_JSONL:-${DATA_DIR}/processed/${DATASET}/eval.jsonl}"
 EVAL_PROMPT_LIMIT="${EVAL_PROMPT_LIMIT:-50}"
 EVAL_N_WARMUP="${EVAL_N_WARMUP:-1}"

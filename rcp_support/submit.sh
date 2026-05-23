@@ -49,8 +49,8 @@
 set -euo pipefail
 
 # ============== EDIT THESE LINES ==============
-GASPAR="gaspar"              # <-- For local runs: your EPFL username. TAs may replace this for grading.
-GROUP="gXX"                  # <-- REQUIRED FOR SUBMISSION: your team, e.g. g07.
+GASPAR="ke"              # <-- For local runs: your EPFL username. TAs may replace this for grading.
+GROUP="g67"                  # <-- REQUIRED FOR SUBMISSION: your team, e.g. g07.
 # ==============================================
 
 # Refuse to run with placeholders. GASPAR is required only by whoever is
