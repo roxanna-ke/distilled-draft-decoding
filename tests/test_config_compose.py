@@ -16,5 +16,27 @@ def test_advertised_loss_data_combinations_compose(monkeypatch):
                 assert cfg.loss.kind == loss
                 assert cfg.data.id == data_name
                 assert cfg.output_dir.startswith("checkpoints/")
-                assert cfg.wandb.enabled is False
-                assert cfg.wandb.project == "cs552-kdsd"
+                assert cfg.eval.backend == "manual"
+
+
+def test_qwen3_a100_config_composes():
+    config_dir = Path(__file__).resolve().parents[1] / "configs"
+
+    with initialize_config_dir(version_base=None, config_dir=str(config_dir)):
+        cfg = compose(config_name="config", overrides=["model=qwen3", "train=a100_40gb_qwen3"])
+
+    assert cfg.model.target == "Qwen/Qwen3-14B"
+    assert cfg.model.draft_default == "Qwen/Qwen3-0.6B"
+    assert cfg.train.draft_init == "Qwen/Qwen3-0.6B"
+    assert cfg.train.per_device_train_batch_size == 1
+
+
+def test_loss_chunk_size_override_composes_for_all_losses():
+    config_dir = Path(__file__).resolve().parents[1] / "configs"
+
+    with initialize_config_dir(version_base=None, config_dir=str(config_dir)):
+        for loss in ["ce", "fkl", "rkl", "jsd"]:
+            cfg = compose(config_name="config", overrides=[f"loss={loss}", "loss.chunk_size=128"])
+
+            assert cfg.loss.kind == loss
+            assert cfg.loss.chunk_size == 128

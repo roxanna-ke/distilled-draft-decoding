@@ -1,3 +1,4 @@
 kind: fkl
 alpha: 1.0
 temperature: 1.0
+chunk_size: null

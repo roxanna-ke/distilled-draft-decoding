@@ -9,27 +9,13 @@ __pycache__/
 .uv/
 
 # Project artefacts (never commit)
-/data
 /data/
-/checkpoints
 /checkpoints/
-/results
 /results/
-/wandb
 /wandb/
-/outputs
 /outputs/
-/multirun
 /multirun/
-/hydra
-/hydra/
-/logs
-/logs/
 /report/
-
-# Jupyter
-.ipynb_checkpoints/
-**/.ipynb_checkpoints/
 
 # HF / model caches
 .cache/
@@ -41,3 +27,5 @@ __pycache__/
 .idea/
 .vscode/
 *.swp
+
+*.log

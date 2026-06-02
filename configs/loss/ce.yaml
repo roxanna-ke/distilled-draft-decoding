@@ -1,3 +1,4 @@
 kind: ce
 alpha: 0.0
 temperature: 1.0
+chunk_size: null

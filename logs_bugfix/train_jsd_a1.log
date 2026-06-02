@@ -1,0 +1,132 @@
+2026-05-21 19:39:57.413908: E external/local_xla/xla/stream_executor/cuda/cuda_dnn.cc:9261] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+2026-05-21 19:39:57.413952: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:607] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+2026-05-21 19:39:57.414958: E external/local_xla/xla/stream_executor/cuda/cuda_blas.cc:1515] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+2026-05-21 19:39:57.422035: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+2026-05-21 19:40:07.363917: W tensorflow/compiler/tf2tensorrt/utils/py_utils.cc:38] TF-TRT Warning: Could not find TensorRT
+2026-05-21 19:40:23,258 INFO    kdsd.train :: resolved config:
+model:
+  target: Qwen/Qwen2.5-3B-Instruct
+  draft_default: Qwen/Qwen2.5-0.5B-Instruct
+  dtype: bfloat16
+  device: cuda
+  attn_impl: sdpa
+  trust_remote_code: false
+data:
+  id: ultrachat_50k
+  family: ultrachat
+  response_source: original
+  n_samples: 50000
+  val_samples: 512
+  eval_samples: 256
+  max_seq_len: 512
+  hf_dataset:
+    name: HuggingFaceH4/ultrachat_200k
+    split: train_sft
+  processed_dir: ${data_root}/processed/${data.id}
+  target_generated_dir: ${data_root}/target_generated/${data.id}
+  tokenized_cache_dir: ${data_root}/tokenized
+  train_path: ${data.processed_dir}/train.jsonl
+  val_path: ${data.processed_dir}/val.jsonl
+  eval_path: ${data.processed_dir}/eval.jsonl
+  target_generation:
+    source_processed_dir: ${data.processed_dir}
+    output_dir: ${data.target_generated_dir}
+    splits:
+    - train
+    - val
+    batch_size: 4
+    max_new_tokens: 512
+    mode: greedy
+    temperature: 0.0
+    top_p: 1.0
+loss:
+  kind: jsd
+  alpha: 1.0
+  temperature: 1.0
+train:
+  draft_init: ${model.draft_default}
+  max_steps: 1400
+  num_train_epochs: 1
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 8
+  learning_rate: 1.0e-05
+  weight_decay: 0.0
+  warmup_ratio: 0.03
+  lr_scheduler_type: cosine
+  logging_steps: 10
+  save_steps: 500
+  eval_steps: 300
+  save_total_limit: 2
+  bf16: true
+  fp16: false
+  gradient_checkpointing: true
+  dataloader_drop_last: true
+  dataloader_num_workers: 2
+  remove_unused_columns: false
+  report_to_wandb: false
+  resume_from_checkpoint: null
+  overfit_samples: 0
+  compile_target: false
+eval:
+  n_warmup: 1
+  n_repeats: 3
+  run_vanilla_baseline: true
+  write_generations: true
+runtime:
+  mode: sampling
+  temperature: 1.0
+  top_p: 0.9
+  gamma: 4
+  max_new_tokens: 256
+benchmark:
+  benchmarks: []
+run_name: kd_jsd_a1_fix
+seed: 42
+output_dir: checkpoints/${run_name}
+draft: null
+prompts:
+  jsonl: null
+  hf_dataset:
+    name: HuggingFaceH4/ultrachat_200k
+    split: test_sft
+    prompt_field: prompt
+  limit: 256
+results_dir: /scratch/cs552-results/${run_name}
+data_root: /net/inltitan2.epfl.ch/scratch2/tzhu/open-project-m2-shallowseek/data
+hf_cache: ${oc.env:HF_HOME,'~/.cache/huggingface'}
+
+2026-05-21 19:40:23,259 INFO    kdsd.train :: output_dir=/net/inltitan2/scratch2/tzhu/open-project-m2-shallowseek/checkpoints/kd_jsd_a1_fix
+2026-05-21 19:40:23,269 INFO    kdsd.train :: Using cached training data at /net/inltitan2.epfl.ch/scratch2/tzhu/open-project-m2-shallowseek/data/processed/ultrachat_50k/train.jsonl
+2026-05-21 19:40:24,151 INFO    kdsd.train :: Loading draft=Qwen/Qwen2.5-0.5B-Instruct
+2026-05-21 19:40:24,707 INFO    kdsd.train :: Loading frozen target=Qwen/Qwen2.5-3B-Instruct
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards: 100%|██████████| 2/2 [00:00<00:00, 38.60it/s]
+2026-05-21 19:40:32,212 INFO    kdsd.train :: Loaded train=44644 eval=461
+/net/inltitan2/scratch2/tzhu/open-project-m2-shallowseek/src/kdsd/train/trainer.py:21: FutureWarning: `tokenizer` is deprecated and will be removed in version 5.0.0 for `KDTrainer.__init__`. Use `processing_class` instead.
+  super().__init__(*args, **kwargs)
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.
+  0%|          | 0/1400 [00:00<?, ?it/s]  0%|          | 1/1400 [00:03<1:30:24,  3.88s/it]  0%|          | 2/1400 [00:06<1:07:26,  2.89s/it]  0%|          | 3/1400 [00:08<1:04:28,  2.77s/it]  0%|          | 4/1400 [00:11<1:01:33,  2.65s/it]  0%|          | 5/1400 [00:13<1:01:43,  2.65s/it]Error executing job with overrides: ['model.device=cuda', 'train.max_steps=1400', 'data.max_seq_len=512', 'train.per_device_train_batch_size=4', 'train.gradient_accumulation_steps=8', 'train.learning_rate=1e-5', 'train.eval_steps=300', 'train.report_to_wandb=false', 'data_root=/net/inltitan2.epfl.ch/scratch2/tzhu/open-project-m2-shallowseek/data', 'loss=jsd', 'loss.alpha=1.0', 'run_name=kd_jsd_a1_fix']
+Traceback (most recent call last):
+  File "/net/inltitan2/scratch2/tzhu/open-project-m2-shallowseek/scripts/train.py", line 30, in main
+    _run(cfg)
+  File "/net/inltitan2/scratch2/tzhu/open-project-m2-shallowseek/scripts/train.py", line 148, in _run
+    result = trainer.train(resume_from_checkpoint=cfg.train.resume_from_checkpoint)
+  File "/home/tzhu/conda/envs/eeg_denoise_39/lib/python3.9/site-packages/transformers/trainer.py", line 2325, in train
+    return inner_training_loop(
+  File "/home/tzhu/conda/envs/eeg_denoise_39/lib/python3.9/site-packages/transformers/trainer.py", line 2674, in _inner_training_loop
+    tr_loss_step = self.training_step(model, inputs, num_items_in_batch)
+  File "/home/tzhu/conda/envs/eeg_denoise_39/lib/python3.9/site-packages/transformers/trainer.py", line 4020, in training_step
+    loss = self.compute_loss(model, inputs, num_items_in_batch=num_items_in_batch)
+  File "/net/inltitan2/scratch2/tzhu/open-project-m2-shallowseek/src/kdsd/train/trainer.py", line 51, in compute_loss
+    loss_parts = kd_loss(
+  File "/net/inltitan2/scratch2/tzhu/open-project-m2-shallowseek/src/kdsd/losses/combined.py", line 51, in kd_loss
+    kd = _full_distribution_kd(
+  File "/net/inltitan2/scratch2/tzhu/open-project-m2-shallowseek/src/kdsd/losses/combined.py", line 101, in _full_distribution_kd
+    per_token = js_divergence(student_logp, teacher_logp)
+  File "/net/inltitan2/scratch2/tzhu/open-project-m2-shallowseek/src/kdsd/losses/jsd.py", line 14, in js_divergence
+    (teacher_p * (teacher_logp - mix_logp)).sum(dim=-1)
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 892.00 MiB. GPU 0 has a total capacity of 23.64 GiB of which 633.69 MiB is free. Including non-PyTorch memory, this process has 23.02 GiB memory in use. Of the allocated memory 22.44 GiB is allocated by PyTorch, and 123.85 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+  0%|          | 5/1400 [00:23<1:48:07,  4.65s/it]

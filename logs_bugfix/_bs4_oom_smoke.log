@@ -1,0 +1,230 @@
+2026-05-21 17:00:19.514407: E external/local_xla/xla/stream_executor/cuda/cuda_dnn.cc:9261] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+2026-05-21 17:00:19.514570: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:607] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+2026-05-21 17:00:20.605871: E external/local_xla/xla/stream_executor/cuda/cuda_blas.cc:1515] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+2026-05-21 17:00:23.971321: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+2026-05-21 17:00:56.675614: W tensorflow/compiler/tf2tensorrt/utils/py_utils.cc:38] TF-TRT Warning: Could not find TensorRT
+2026-05-21 17:01:39,502 INFO    kdsd.train :: resolved config:
+model:
+  target: Qwen/Qwen2.5-3B-Instruct
+  draft_default: Qwen/Qwen2.5-0.5B-Instruct
+  dtype: bfloat16
+  device: cuda
+  attn_impl: sdpa
+  trust_remote_code: false
+data:
+  id: ultrachat_50k
+  family: ultrachat
+  response_source: original
+  n_samples: 50000
+  val_samples: 512
+  eval_samples: 256
+  max_seq_len: 512
+  hf_dataset:
+    name: HuggingFaceH4/ultrachat_200k
+    split: train_sft
+  processed_dir: ${data_root}/processed/${data.id}
+  target_generated_dir: ${data_root}/target_generated/${data.id}
+  tokenized_cache_dir: ${data_root}/tokenized
+  train_path: ${data.processed_dir}/train.jsonl
+  val_path: ${data.processed_dir}/val.jsonl
+  eval_path: ${data.processed_dir}/eval.jsonl
+  target_generation:
+    source_processed_dir: ${data.processed_dir}
+    output_dir: ${data.target_generated_dir}
+    splits:
+    - train
+    - val
+    batch_size: 4
+    max_new_tokens: 512
+    mode: greedy
+    temperature: 0.0
+    top_p: 1.0
+loss:
+  kind: fkl
+  alpha: 1.0
+  temperature: 1.0
+train:
+  draft_init: ${model.draft_default}
+  max_steps: 2
+  num_train_epochs: 1
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 8
+  learning_rate: 1.0e-05
+  weight_decay: 0.0
+  warmup_ratio: 0.03
+  lr_scheduler_type: cosine
+  logging_steps: 10
+  save_steps: 2
+  eval_steps: 2
+  save_total_limit: 2
+  bf16: true
+  fp16: false
+  gradient_checkpointing: true
+  dataloader_drop_last: true
+  dataloader_num_workers: 2
+  remove_unused_columns: false
+  report_to_wandb: false
+  resume_from_checkpoint: null
+  overfit_samples: 0
+  compile_target: false
+eval:
+  n_warmup: 1
+  n_repeats: 3
+  run_vanilla_baseline: true
+  write_generations: true
+runtime:
+  mode: sampling
+  temperature: 1.0
+  top_p: 0.9
+  gamma: 4
+  max_new_tokens: 256
+benchmark:
+  benchmarks: []
+run_name: _bs4_oom_smoke
+seed: 42
+output_dir: checkpoints/${run_name}
+draft: null
+prompts:
+  jsonl: null
+  hf_dataset:
+    name: HuggingFaceH4/ultrachat_200k
+    split: test_sft
+    prompt_field: prompt
+  limit: 256
+results_dir: /scratch/cs552-results/${run_name}
+data_root: /net/inltitan2.epfl.ch/scratch2/tzhu/open-project-m2-shallowseek/data
+hf_cache: ${oc.env:HF_HOME,'~/.cache/huggingface'}
+
+2026-05-21 17:01:39,502 INFO    kdsd.train :: output_dir=/net/inltitan2/scratch2/tzhu/open-project-m2-shallowseek/checkpoints/_bs4_oom_smoke
+2026-05-21 17:01:39,510 INFO    kdsd.train :: Using cached training data at /net/inltitan2.epfl.ch/scratch2/tzhu/open-project-m2-shallowseek/data/processed/ultrachat_50k/train.jsonl
+2026-05-21 17:01:40,953 INFO    kdsd.train :: Loading draft=Qwen/Qwen2.5-0.5B-Instruct
+2026-05-21 17:01:42,957 INFO    kdsd.train :: Loading frozen target=Qwen/Qwen2.5-3B-Instruct
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards:  50%|█████     | 1/2 [00:01<00:01,  1.91s/it]Loading checkpoint shards: 100%|██████████| 2/2 [00:03<00:00,  1.51s/it]Loading checkpoint shards: 100%|██████████| 2/2 [00:03<00:00,  1.57s/it]
+2026-05-21 17:02:56,672 INFO    kdsd.train :: Loaded train=44644 eval=461
+/net/inltitan2/scratch2/tzhu/open-project-m2-shallowseek/src/kdsd/train/trainer.py:21: FutureWarning: `tokenizer` is deprecated and will be removed in version 5.0.0 for `KDTrainer.__init__`. Use `processing_class` instead.
+  super().__init__(*args, **kwargs)
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.
+  0%|          | 0/2 [00:00<?, ?it/s] 50%|█████     | 1/2 [00:14<00:14, 14.45s/it]100%|██████████| 2/2 [00:16<00:00,  7.15s/it]
+  0%|          | 0/115 [00:00<?, ?it/s][A
+  2%|▏         | 2/115 [00:00<00:08, 13.77it/s][A
+  3%|▎         | 4/115 [00:00<00:14,  7.83it/s][A
+  4%|▍         | 5/115 [00:00<00:15,  7.29it/s][A
+  5%|▌         | 6/115 [00:00<00:15,  6.97it/s][A
+  6%|▌         | 7/115 [00:00<00:15,  6.78it/s][A
+  7%|▋         | 8/115 [00:01<00:24,  4.28it/s][A
+  8%|▊         | 9/115 [00:01<00:22,  4.69it/s][A
+  9%|▊         | 10/115 [00:01<00:20,  5.24it/s][A
+ 10%|▉         | 11/115 [00:01<00:18,  5.56it/s][A
+ 10%|█         | 12/115 [00:02<00:17,  5.78it/s][A
+ 11%|█▏        | 13/115 [00:02<00:17,  5.93it/s][A
+ 12%|█▏        | 14/115 [00:02<00:16,  6.06it/s][A
+ 13%|█▎        | 15/115 [00:02<00:16,  6.17it/s][A
+ 14%|█▍        | 16/115 [00:02<00:16,  6.06it/s][A
+ 15%|█▍        | 17/115 [00:02<00:15,  6.14it/s][A
+ 16%|█▌        | 18/115 [00:02<00:15,  6.18it/s][A
+ 17%|█▋        | 19/115 [00:03<00:15,  6.22it/s][A
+ 17%|█▋        | 20/115 [00:03<00:15,  6.26it/s][A
+ 18%|█▊        | 21/115 [00:03<00:15,  6.25it/s][A
+ 19%|█▉        | 22/115 [00:03<00:14,  6.28it/s][A
+ 20%|██        | 23/115 [00:03<00:14,  6.33it/s][A
+ 21%|██        | 24/115 [00:03<00:14,  6.35it/s][A
+ 22%|██▏       | 25/115 [00:04<00:13,  6.91it/s][A
+ 23%|██▎       | 26/115 [00:04<00:13,  6.75it/s][A
+ 23%|██▎       | 27/115 [00:04<00:13,  6.57it/s][A
+ 24%|██▍       | 28/115 [00:04<00:13,  6.47it/s][A
+ 25%|██▌       | 29/115 [00:04<00:13,  6.40it/s][A
+ 26%|██▌       | 30/115 [00:04<00:13,  6.41it/s][A
+ 27%|██▋       | 31/115 [00:04<00:13,  6.36it/s][A
+ 28%|██▊       | 32/115 [00:05<00:13,  6.28it/s][A
+ 29%|██▊       | 33/115 [00:05<00:13,  6.22it/s][A
+ 30%|██▉       | 34/115 [00:05<00:12,  6.26it/s][A
+ 30%|███       | 35/115 [00:05<00:12,  6.38it/s][A
+ 31%|███▏      | 36/115 [00:05<00:12,  6.39it/s][A
+ 32%|███▏      | 37/115 [00:05<00:12,  6.36it/s][A
+ 33%|███▎      | 38/115 [00:06<00:12,  6.29it/s][A
+ 34%|███▍      | 39/115 [00:06<00:12,  6.24it/s][A
+ 35%|███▍      | 40/115 [00:06<00:11,  6.46it/s][A
+ 36%|███▌      | 41/115 [00:06<00:11,  6.48it/s][A
+ 37%|███▋      | 42/115 [00:06<00:10,  6.90it/s][A
+ 37%|███▋      | 43/115 [00:06<00:10,  7.16it/s][A
+ 38%|███▊      | 44/115 [00:06<00:10,  7.00it/s][A
+ 39%|███▉      | 45/115 [00:07<00:10,  6.80it/s][A
+ 40%|████      | 46/115 [00:07<00:10,  6.65it/s][A
+ 41%|████      | 47/115 [00:07<00:10,  6.59it/s][A
+ 42%|████▏     | 48/115 [00:07<00:09,  6.87it/s][A
+ 43%|████▎     | 49/115 [00:07<00:09,  6.79it/s][A
+ 43%|████▎     | 50/115 [00:07<00:09,  6.63it/s][A
+ 44%|████▍     | 51/115 [00:08<00:09,  6.53it/s][A
+ 45%|████▌     | 52/115 [00:08<00:09,  6.42it/s][A
+ 46%|████▌     | 53/115 [00:08<00:09,  6.32it/s][A
+ 47%|████▋     | 54/115 [00:08<00:09,  6.34it/s][A
+ 48%|████▊     | 55/115 [00:08<00:09,  6.36it/s][A
+ 49%|████▊     | 56/115 [00:08<00:09,  6.35it/s][A
+ 50%|████▉     | 57/115 [00:08<00:09,  6.30it/s][A
+ 50%|█████     | 58/115 [00:09<00:09,  6.29it/s][A
+ 51%|█████▏    | 59/115 [00:09<00:09,  6.18it/s][A
+ 52%|█████▏    | 60/115 [00:09<00:08,  6.21it/s][A
+ 53%|█████▎    | 61/115 [00:09<00:08,  6.24it/s][A
+ 54%|█████▍    | 62/115 [00:09<00:08,  6.22it/s][A
+ 55%|█████▍    | 63/115 [00:09<00:08,  6.23it/s][A
+ 56%|█████▌    | 64/115 [00:10<00:08,  6.32it/s][A
+ 57%|█████▋    | 65/115 [00:10<00:07,  6.34it/s][A
+ 57%|█████▋    | 66/115 [00:10<00:07,  6.33it/s][A
+ 58%|█████▊    | 67/115 [00:10<00:07,  6.37it/s][A
+ 59%|█████▉    | 68/115 [00:10<00:07,  6.38it/s][A
+ 60%|██████    | 69/115 [00:10<00:07,  6.39it/s][A
+ 61%|██████    | 70/115 [00:11<00:06,  6.59it/s][A
+ 62%|██████▏   | 71/115 [00:11<00:06,  6.53it/s][A
+ 63%|██████▎   | 72/115 [00:11<00:06,  6.43it/s][A
+ 63%|██████▎   | 73/115 [00:11<00:06,  6.58it/s][A
+ 64%|██████▍   | 74/115 [00:11<00:06,  6.66it/s][A
+ 65%|██████▌   | 75/115 [00:11<00:06,  6.58it/s][A
+ 66%|██████▌   | 76/115 [00:11<00:05,  6.62it/s][A
+ 67%|██████▋   | 77/115 [00:12<00:05,  6.53it/s][A
+ 68%|██████▊   | 78/115 [00:12<00:05,  6.70it/s][A
+ 69%|██████▊   | 79/115 [00:12<00:05,  6.68it/s][A
+ 70%|██████▉   | 80/115 [00:12<00:05,  6.58it/s][A
+ 70%|███████   | 81/115 [00:12<00:05,  6.48it/s][A
+ 71%|███████▏  | 82/115 [00:12<00:05,  6.43it/s][A
+ 72%|███████▏  | 83/115 [00:13<00:05,  6.35it/s][A
+ 73%|███████▎  | 84/115 [00:13<00:04,  6.33it/s][A
+ 74%|███████▍  | 85/115 [00:13<00:04,  6.27it/s][A
+ 75%|███████▍  | 86/115 [00:13<00:04,  6.46it/s][A
+ 76%|███████▌  | 87/115 [00:13<00:04,  6.45it/s][A
+ 77%|███████▋  | 88/115 [00:13<00:04,  6.64it/s][A
+ 77%|███████▋  | 89/115 [00:13<00:03,  6.54it/s][A
+ 78%|███████▊  | 90/115 [00:14<00:03,  6.38it/s][A
+ 79%|███████▉  | 91/115 [00:14<00:03,  6.31it/s][A
+ 80%|████████  | 92/115 [00:14<00:03,  6.29it/s][A
+ 81%|████████  | 93/115 [00:14<00:03,  6.33it/s][A
+ 82%|████████▏ | 94/115 [00:14<00:03,  6.34it/s][A
+ 83%|████████▎ | 95/115 [00:14<00:03,  6.29it/s][A
+ 83%|████████▎ | 96/115 [00:15<00:03,  6.24it/s][A
+ 84%|████████▍ | 97/115 [00:15<00:02,  6.21it/s][A
+ 85%|████████▌ | 98/115 [00:15<00:02,  6.33it/s][A
+ 86%|████████▌ | 99/115 [00:15<00:02,  6.33it/s][A
+ 87%|████████▋ | 100/115 [00:15<00:02,  6.25it/s][A
+ 88%|████████▊ | 101/115 [00:15<00:02,  6.24it/s][A
+ 89%|████████▊ | 102/115 [00:16<00:02,  6.22it/s][A
+ 90%|████████▉ | 103/115 [00:16<00:01,  6.28it/s][A
+ 90%|█████████ | 104/115 [00:16<00:01,  6.25it/s][A
+ 91%|█████████▏| 105/115 [00:16<00:01,  6.65it/s][A
+ 92%|█████████▏| 106/115 [00:16<00:01,  6.58it/s][A
+ 93%|█████████▎| 107/115 [00:16<00:01,  6.37it/s][A
+ 94%|█████████▍| 108/115 [00:16<00:01,  6.25it/s][A
+ 95%|█████████▍| 109/115 [00:17<00:00,  6.21it/s][A
+ 96%|█████████▌| 110/115 [00:17<00:00,  6.19it/s][A
+ 97%|█████████▋| 111/115 [00:17<00:00,  6.20it/s][A
+ 97%|█████████▋| 112/115 [00:17<00:00,  6.24it/s][A
+ 98%|█████████▊| 113/115 [00:17<00:00,  6.24it/s][A
+ 99%|█████████▉| 114/115 [00:17<00:00,  6.27it/s][A[2026-05-21 17:03:41,237][accelerate.accelerator][INFO] - The used dataset had no length, returning gathered tensors. You should drop the remainder yourself.
+
+100%|██████████| 115/115 [00:18<00:00,  5.51it/s][A                                             
+                                                 [A100%|██████████| 2/2 [00:34<00:00,  7.15s/it]
+100%|██████████| 115/115 [00:18<00:00,  5.51it/s][A
+                                                 [A                                             100%|██████████| 2/2 [02:38<00:00,  7.15s/it]100%|██████████| 2/2 [02:38<00:00, 79.38s/it]
+2026-05-21 17:06:44,603 INFO    kdsd.train :: Wrote checkpoint to /net/inltitan2/scratch2/tzhu/open-project-m2-shallowseek/checkpoints/_bs4_oom_smoke
+{'eval_loss': 0.4633226692676544, 'eval_runtime': 18.4454, 'eval_samples_per_second': 24.993, 'eval_steps_per_second': 6.289, 'epoch': 0.0}
+{'train_runtime': 158.7548, 'train_samples_per_second': 0.403, 'train_steps_per_second': 0.013, 'train_loss': 0.5169516205787659, 'epoch': 0.0}

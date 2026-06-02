@@ -29,6 +29,7 @@ def kd_loss(
     temperature: float = 1.0,
     alpha: float = 0.5,
     loss_mask: torch.Tensor | None = None,
+    chunk_size: int | None = None,
 ) -> dict[str, torch.Tensor]:
     """Return `{"loss", "ce", "kd"}` for response-token KD training."""
     kind = kind.lower()
@@ -55,6 +56,7 @@ def kd_loss(
         kind=kind,
         temperature=float(temperature),
         loss_mask=loss_mask,
+        chunk_size=chunk_size,
     )
     loss = float(alpha) * kd + (1.0 - float(alpha)) * ce
     return {"loss": loss, "ce": ce.detach(), "kd": kd.detach()}
@@ -68,6 +70,7 @@ def _full_distribution_kd(
     kind: str,
     temperature: float,
     loss_mask: torch.Tensor | None,
+    chunk_size: int | None,
 ) -> torch.Tensor:
     if student_logits.shape != teacher_logits.shape:
         raise ValueError(
@@ -77,8 +80,8 @@ def _full_distribution_kd(
     if temperature <= 0:
         raise ValueError("temperature must be > 0 for KD losses")
 
-    shift_student = student_logits[..., :-1, :].contiguous()
-    shift_teacher = teacher_logits[..., :-1, :].contiguous()
+    shift_student = student_logits[..., :-1, :]
+    shift_teacher = teacher_logits[..., :-1, :]
     shift_labels = labels[..., 1:].contiguous()
     if loss_mask is None:
         valid = shift_labels.ne(-100)
@@ -88,17 +91,29 @@ def _full_distribution_kd(
     if not valid.any():
         return shift_student.sum() * 0.0
 
-    s = shift_student[valid] / temperature
-    t = shift_teacher[valid] / temperature
-    student_logp = F.log_softmax(s.float(), dim=-1)
-    teacher_logp = F.log_softmax(t.float(), dim=-1)
+    flat_student = shift_student.reshape(-1, shift_student.shape[-1])
+    flat_teacher = shift_teacher.reshape(-1, shift_teacher.shape[-1])
+    valid_idx = valid.reshape(-1).nonzero(as_tuple=False).flatten()
 
-    if kind == "fkl":
-        per_token = forward_kl(student_logp, teacher_logp)
-    elif kind == "rkl":
-        per_token = reverse_kl(student_logp, teacher_logp)
-    elif kind == "jsd":
-        per_token = js_divergence(student_logp, teacher_logp)
-    else:  # pragma: no cover - checked by caller
-        raise ValueError(kind)
-    return per_token.mean().to(student_logits.dtype) * (temperature ** 2)
+    if chunk_size is None or chunk_size <= 0:
+        chunk_size = int(valid_idx.numel())
+
+    total = student_logits.new_zeros((), dtype=torch.float32)
+    count = 0
+    for idx in valid_idx.split(int(chunk_size)):
+        s = flat_student.index_select(0, idx) / temperature
+        t = flat_teacher.index_select(0, idx) / temperature
+        student_logp = F.log_softmax(s.float(), dim=-1)
+        teacher_logp = F.log_softmax(t.float(), dim=-1)
+
+        if kind == "fkl":
+            per_token = forward_kl(student_logp, teacher_logp)
+        elif kind == "rkl":
+            per_token = reverse_kl(student_logp, teacher_logp)
+        elif kind == "jsd":
+            per_token = js_divergence(student_logp, teacher_logp)
+        else:  # pragma: no cover - checked by caller
+            raise ValueError(kind)
+        total = total + per_token.sum()
+        count += int(per_token.numel())
+    return (total / count).to(student_logits.dtype) * (temperature ** 2)

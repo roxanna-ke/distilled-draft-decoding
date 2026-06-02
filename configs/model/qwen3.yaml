@@ -1,0 +1,13 @@
+target: Qwen/Qwen3-14B
+
+# Default draft for 40GB-A100 online KD. The 1.7B draft id is exposed below for
+# explicit CLI overrides, but full fine-tuning 1.7B with a resident 14B teacher is
+# expected to exceed 40GB unless the trainer is extended with PEFT/quantization.
+draft_default: Qwen/Qwen3-0.6B
+draft_0_6b: Qwen/Qwen3-0.6B
+draft_1_7b: Qwen/Qwen3-1.7B
+
+dtype: bfloat16        # bfloat16 | float16 | float32
+device: cuda           # cuda | cpu | auto
+attn_impl: sdpa        # sdpa | eager | flash_attention_2
+trust_remote_code: false

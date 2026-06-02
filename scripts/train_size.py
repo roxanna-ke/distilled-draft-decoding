@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import os
 import random
+import shutil
 import sys
 from pathlib import Path
 
@@ -147,9 +148,16 @@ def _run(cfg: DictConfig) -> None:
         tokenizer=tokenizer,
         kd_cfg=OmegaConf.to_container(cfg.loss, resolve=True),
     )
+    _maybe_log_wandb_config(cfg, run_name=run_name, out_dir=out_dir, log=log)
     result = trainer.train(resume_from_checkpoint=cfg.train.resume_from_checkpoint)
     trainer.save_model(out_dir / "model")
     tokenizer.save_pretrained(out_dir / "model")
+    if bool(cfg.train.get("save_best_model", False)):
+        best_dir = out_dir / "best_model"
+        if best_dir.exists():
+            shutil.rmtree(best_dir)
+        trainer.save_model(best_dir)
+        tokenizer.save_pretrained(best_dir)
     OmegaConf.save(cfg, out_dir / "config.yaml")
 
     metrics = result.metrics if result is not None else {}
@@ -161,6 +169,8 @@ def _run(cfg: DictConfig) -> None:
             "run_name": run_name,
             "train_loss_final": metrics.get("train_loss"),
             "steps": metrics.get("global_step", cfg.train.max_steps),
+            "best_model_checkpoint": getattr(trainer.state, "best_model_checkpoint", None),
+            "best_metric": getattr(trainer.state, "best_metric", None),
             "dataset_id": str(cfg.data.id),
             "draft_init": draft_init,
             "target": str(cfg.model.target),
@@ -182,12 +192,17 @@ def _ensure_training_data(cfg: DictConfig, *, train_path: Path, log) -> None:
     The tokenized dataset class already handles its own cache. This helper is
     only concerned with the canonical JSONL split selected by cfg.data.
     """
-    if train_path.exists():
+    data_id = str(cfg.data.get("id", "unknown"))
+    response_source = str(cfg.data.get("response_source", "original"))
+    if response_source == "target_generated":
+        _ensure_source_processed_data(cfg, log=log)
+        if _target_generated_splits_complete(cfg, log=log):
+            log.info("Using cached target-generated training data at %s", train_path)
+            return
+    elif train_path.exists():
         log.info("Using cached training data at %s", train_path)
         return
 
-    data_id = str(cfg.data.get("id", "unknown"))
-    response_source = str(cfg.data.get("response_source", "original"))
     log.warning(
         "Training data %s is missing; preparing data_id=%s response_source=%s",
         train_path,
@@ -196,7 +211,6 @@ def _ensure_training_data(cfg: DictConfig, *, train_path: Path, log) -> None:
     )
 
     if response_source == "target_generated":
-        _ensure_source_processed_data(cfg, log=log)
         _run_target_response_generation(cfg)
     else:
         _run_prepare_data(cfg)
@@ -206,6 +220,111 @@ def _ensure_training_data(cfg: DictConfig, *, train_path: Path, log) -> None:
             f"Expected training data at {train_path} after auto-preparation, but it was not written"
         )
     log.info("Prepared training data at %s", train_path)
+
+
+def _maybe_log_wandb_config(cfg: DictConfig, *, run_name: str, out_dir: Path, log) -> None:
+    """Populate the W&B Config panel with the resolved experiment settings."""
+    if not bool(cfg.train.get("report_to_wandb", False)):
+        return
+
+    try:
+        import wandb
+    except ImportError:
+        log.warning("train.report_to_wandb=true but wandb is not installed; skipping W&B config logging")
+        return
+
+    train = cfg.train
+    config_payload = {
+        "run_name": run_name,
+        "output_dir": str(out_dir),
+        "seed": int(cfg.seed),
+        "model_target": str(cfg.model.target),
+        "model_draft_init": str(train.draft_init),
+        "model_dtype": str(cfg.model.dtype),
+        "model_attn_impl": str(cfg.model.attn_impl),
+        "data_id": str(cfg.data.id),
+        "data_family": str(cfg.data.family),
+        "data_response_source": str(cfg.data.get("response_source", "unknown")),
+        "data_max_seq_len": int(cfg.data.max_seq_len),
+        "loss_kind": str(cfg.loss.kind),
+        "loss_alpha": float(cfg.loss.get("alpha", 0.0)),
+        "loss_temperature": float(cfg.loss.get("temperature", 1.0)),
+        "train_max_steps": int(train.max_steps),
+        "train_learning_rate": float(train.learning_rate),
+        "train_lr_scheduler_type": str(train.lr_scheduler_type),
+        "train_warmup_ratio": float(train.warmup_ratio),
+        "train_weight_decay": float(train.weight_decay),
+        "train_per_device_train_batch_size": int(train.per_device_train_batch_size),
+        "train_gradient_accumulation_steps": int(train.gradient_accumulation_steps),
+        "train_effective_batch_size": int(train.per_device_train_batch_size)
+        * int(train.gradient_accumulation_steps),
+        "train_per_device_eval_batch_size": int(train.per_device_eval_batch_size),
+        "train_logging_steps": int(train.logging_steps),
+        "train_save_steps": int(train.save_steps),
+        "train_eval_steps": int(train.eval_steps),
+        "train_save_total_limit": int(train.save_total_limit),
+        "train_load_best_model_at_end": bool(train.get("load_best_model_at_end", False)),
+        "train_metric_for_best_model": str(train.get("metric_for_best_model", "eval_loss")),
+        "train_greater_is_better": bool(train.get("greater_is_better", False)),
+        "train_save_best_model": bool(train.get("save_best_model", False)),
+        "train_bf16": bool(train.bf16),
+        "train_gradient_checkpointing": bool(train.gradient_checkpointing),
+    }
+
+    if wandb.run is None:
+        wandb.init(
+            project=os.environ.get("WANDB_PROJECT"),
+            name=os.environ.get("WANDB_NAME", run_name),
+            dir=os.environ.get("WANDB_DIR"),
+            config=config_payload,
+        )
+    else:
+        wandb.config.update(config_payload, allow_val_change=True)
+    log.info("Logged training config to W&B config panel")
+
+
+def _target_generated_splits_complete(cfg: DictConfig, *, log) -> bool:
+    gen_cfg = cfg.data.get("target_generation")
+    if gen_cfg is None:
+        return False
+
+    from kdsd.utils.experiment import resolve_path
+
+    out_dir = resolve_path(str(gen_cfg.output_dir))
+    expected_by_split = {
+        "train": int(cfg.data.get("n_samples", 0) or 0),
+        "val": int(cfg.data.get("val_samples", 0) or 0),
+    }
+    limit = cfg.data.get("limit")
+    if limit is not None and int(limit) > 0:
+        expected_by_split["train"] = min(expected_by_split["train"], int(limit))
+        expected_by_split["val"] = min(expected_by_split["val"], int(limit))
+    for split in gen_cfg.get("splits", ["train", "val"]):
+        path = out_dir / f"{split}.jsonl"
+        expected = expected_by_split.get(str(split), 0)
+        if not path.exists():
+            log.warning("Target-generated split %s is missing at %s", split, path)
+            return False
+        actual = _count_jsonl_lines(path)
+        if expected > 0 and actual < expected:
+            log.warning(
+                "Target-generated split %s is incomplete at %s: %d/%d rows; resuming generation",
+                split,
+                path,
+                actual,
+                expected,
+            )
+            return False
+    return True
+
+
+def _count_jsonl_lines(path: Path) -> int:
+    n = 0
+    with path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            if line.strip():
+                n += 1
+    return n
 
 
 def _ensure_source_processed_data(cfg: DictConfig, *, log) -> None:
@@ -265,6 +384,9 @@ def _training_args(cfg: DictConfig, out_dir: Path, cls, *, do_eval: bool):
         "save_steps": int(train.save_steps),
         "eval_steps": int(train.eval_steps),
         "save_total_limit": int(train.save_total_limit),
+        "load_best_model_at_end": bool(train.get("load_best_model_at_end", False)),
+        "metric_for_best_model": str(train.get("metric_for_best_model", "eval_loss")),
+        "greater_is_better": bool(train.get("greater_is_better", False)),
         "bf16": bool(train.bf16),
         "fp16": bool(train.fp16),
         "dataloader_drop_last": bool(train.dataloader_drop_last),

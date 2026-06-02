@@ -1,0 +1,105 @@
+2026-05-21 19:55:28.442614: E external/local_xla/xla/stream_executor/cuda/cuda_dnn.cc:9261] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+2026-05-21 19:55:28.442666: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:607] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+2026-05-21 19:55:28.443659: E external/local_xla/xla/stream_executor/cuda/cuda_blas.cc:1515] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+2026-05-21 19:55:28.450323: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+2026-05-21 19:55:36.730092: W tensorflow/compiler/tf2tensorrt/utils/py_utils.cc:38] TF-TRT Warning: Could not find TensorRT
+2026-05-21 19:55:57,864 INFO    kdsd.evaluate_sd :: resolved config:
+model:
+  target: Qwen/Qwen2.5-3B-Instruct
+  draft_default: Qwen/Qwen2.5-0.5B-Instruct
+  dtype: bfloat16
+  device: cuda
+  attn_impl: sdpa
+  trust_remote_code: false
+data:
+  id: ultrachat_50k
+  family: ultrachat
+  response_source: original
+  n_samples: 50000
+  val_samples: 512
+  eval_samples: 256
+  max_seq_len: 1024
+  hf_dataset:
+    name: HuggingFaceH4/ultrachat_200k
+    split: train_sft
+  processed_dir: ${data_root}/processed/${data.id}
+  target_generated_dir: ${data_root}/target_generated/${data.id}
+  tokenized_cache_dir: ${data_root}/tokenized
+  train_path: ${data.processed_dir}/train.jsonl
+  val_path: ${data.processed_dir}/val.jsonl
+  eval_path: ${data.processed_dir}/eval.jsonl
+  target_generation:
+    source_processed_dir: ${data.processed_dir}
+    output_dir: ${data.target_generated_dir}
+    splits:
+    - train
+    - val
+    batch_size: 4
+    max_new_tokens: 512
+    mode: greedy
+    temperature: 0.0
+    top_p: 1.0
+loss:
+  kind: fkl
+  alpha: 1.0
+  temperature: 1.0
+train:
+  draft_init: ${model.draft_default}
+  max_steps: 4000
+  num_train_epochs: 1
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 2
+  learning_rate: 2.0e-05
+  weight_decay: 0.0
+  warmup_ratio: 0.03
+  lr_scheduler_type: cosine
+  logging_steps: 10
+  save_steps: 500
+  eval_steps: 500
+  save_total_limit: 2
+  bf16: true
+  fp16: false
+  gradient_checkpointing: true
+  dataloader_drop_last: true
+  dataloader_num_workers: 2
+  remove_unused_columns: false
+  report_to_wandb: true
+  resume_from_checkpoint: null
+  overfit_samples: 0
+  compile_target: false
+eval:
+  n_warmup: 1
+  n_repeats: 2
+  run_vanilla_baseline: true
+  write_generations: true
+runtime:
+  mode: sampling
+  temperature: 1.0
+  top_p: 0.9
+  gamma: 4
+  max_new_tokens: 128
+benchmark:
+  benchmarks: []
+run_name: kd_rkl_a1_fix_eval
+seed: 42
+output_dir: checkpoints/${run_name}
+draft: checkpoints/kd_rkl_a1_fix/model
+prompts:
+  jsonl: data/processed/ultrachat_50k/eval.jsonl
+  hf_dataset:
+    name: HuggingFaceH4/ultrachat_200k
+    split: test_sft
+    prompt_field: prompt
+  limit: 20
+results_dir: results/kd_rkl_a1_fix_eval
+data_root: /scratch/cs552-data
+hf_cache: ${oc.env:HF_HOME,'~/.cache/huggingface'}
+
+2026-05-21 19:55:57,864 INFO    kdsd.evaluate_sd :: HF_HOME=/net/inltitan2.epfl.ch/scratch2/tzhu/.cache/huggingface
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards: 100%|██████████| 2/2 [00:00<00:00, 42.99it/s]
+2026-05-21 19:56:10,175 INFO    kdsd.evaluate_sd :: Loaded target=Qwen/Qwen2.5-3B-Instruct draft=checkpoints/kd_rkl_a1_fix/model on cuda (dtype=torch.bfloat16)
+2026-05-21 19:56:10,188 INFO    kdsd.evaluate_sd :: Loaded 20 prompts
+2026-05-21 20:01:45,249 INFO    kdsd.evaluate_sd :: Wrote eval results to /net/inltitan2/scratch2/tzhu/open-project-m2-shallowseek/results/kd_rkl_a1_fix_eval
+2026-05-21 20:01:45,250 INFO    kdsd.evaluate_sd :: acceptance_rate=0.455 avg_accepted_tokens=1.82 speedup=0.51x tokens/s=22.3

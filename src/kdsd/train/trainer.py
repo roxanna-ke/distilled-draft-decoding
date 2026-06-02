@@ -58,6 +58,7 @@ class KDTrainer(Trainer):
             temperature=float(self.kd_cfg.get("temperature", 1.0)),
             alpha=float(self.kd_cfg.get("alpha", 0.5)),
             loss_mask=response_mask,
+            chunk_size=self.kd_cfg.get("chunk_size"),
         )
         if model.training:
             self._loss_part_sums["loss_ce"] += float(loss_parts["ce"].detach().cpu())

@@ -61,10 +61,7 @@ def main(cfg: DictConfig) -> None:
 def _run_eval(cfg: DictConfig, out_dir: Path) -> None:
     import random
     import numpy as np
-    import torch
 
-    from kdsd.eval.runner import run_hf_eval
-    from kdsd.models.loader import load_pair
     from kdsd.utils.io import read_jsonl, validate_eval_summary, write_json, write_jsonl
     from kdsd.utils.logging import get_logger
 
@@ -78,40 +75,88 @@ def _run_eval(cfg: DictConfig, out_dir: Path) -> None:
     seed = int(cfg.seed)
     random.seed(seed)
     np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-
-    pair = load_pair(
-        target_id=str(cfg.model.target),
-        draft_spec=(None if cfg.draft in (None, "", "null") else str(cfg.draft)),
-        dtype=str(cfg.model.dtype),
-        device=str(cfg.model.device),
-        attn_impl=str(cfg.model.attn_impl),
-        trust_remote_code=bool(cfg.model.trust_remote_code),
-        draft_default=str(cfg.model.get("draft_default") or "") or None,
-    )
-    LOG.info(
-        "Loaded target=%s draft=%s on %s (dtype=%s)",
-        pair.target_id, pair.draft_id, pair.device, pair.dtype,
-    )
 
     prompts = _load_prompts(cfg, read_jsonl, LOG)
     LOG.info("Loaded %d prompts", len(prompts))
 
-    summary, rows = run_hf_eval(
-        target=pair.target,
-        draft=pair.draft,
-        tokenizer=pair.tokenizer,
-        prompts=prompts,
-        runtime=OmegaConf.to_container(cfg.runtime, resolve=True),  # type: ignore[arg-type]
-        eval_cfg=OmegaConf.to_container(cfg.eval, resolve=True),    # type: ignore[arg-type]
-        device=pair.device,
-        target_id=pair.target_id,
-        draft_id=pair.draft_id,
-        run_name=str(cfg.run_name),
-        benchmarks=list(cfg.benchmark.get("benchmarks") or []),
-    )
+    backend = str(cfg.eval.get("backend", "manual")).lower()
+    runtime_cfg = OmegaConf.to_container(cfg.runtime, resolve=True)  # type: ignore[arg-type]
+    eval_cfg = OmegaConf.to_container(cfg.eval, resolve=True)        # type: ignore[arg-type]
+    benchmarks = list(cfg.benchmark.get("benchmarks") or [])
+
+    if backend == "manual":
+        import torch
+
+        from kdsd.eval.runner import run_hf_eval
+        from kdsd.models.loader import load_pair
+
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+
+        pair = load_pair(
+            target_id=str(cfg.model.target),
+            draft_spec=(None if cfg.draft in (None, "", "null") else str(cfg.draft)),
+            dtype=str(cfg.model.dtype),
+            device=str(cfg.model.device),
+            attn_impl=str(cfg.model.attn_impl),
+            trust_remote_code=bool(cfg.model.trust_remote_code),
+            draft_default=str(cfg.model.get("draft_default") or "") or None,
+        )
+        LOG.info(
+            "Loaded target=%s draft=%s on %s (dtype=%s)",
+            pair.target_id, pair.draft_id, pair.device, pair.dtype,
+        )
+
+        summary, rows = run_hf_eval(
+            target=pair.target,
+            draft=pair.draft,
+            tokenizer=pair.tokenizer,
+            prompts=prompts,
+            runtime=runtime_cfg,
+            eval_cfg=eval_cfg,
+            device=pair.device,
+            target_id=pair.target_id,
+            draft_id=pair.draft_id,
+            run_name=str(cfg.run_name),
+            benchmarks=benchmarks,
+        )
+    elif backend == "vllm":
+        from transformers import AutoTokenizer
+
+        from kdsd.eval.vllm_runner import run_vllm_eval
+
+        target_id = str(cfg.model.target)
+        draft_id = _resolve_draft_id(
+            cfg.get("draft"),
+            draft_default=str(cfg.model.get("draft_default") or "") or None,
+        )
+        tokenizer = AutoTokenizer.from_pretrained(
+            target_id,
+            trust_remote_code=bool(cfg.model.trust_remote_code),
+        )
+        if tokenizer.pad_token_id is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        LOG.info(
+            "Using vLLM backend target=%s draft=%s (dtype=%s)",
+            target_id, draft_id, str(cfg.model.dtype),
+        )
+
+        summary, rows = run_vllm_eval(
+            tokenizer=tokenizer,
+            prompts=prompts,
+            runtime=runtime_cfg,
+            eval_cfg=eval_cfg,
+            target_id=target_id,
+            draft_id=draft_id,
+            run_name=str(cfg.run_name),
+            benchmarks=benchmarks,
+            dtype=str(cfg.model.dtype),
+            trust_remote_code=bool(cfg.model.trust_remote_code),
+            seed=seed,
+        )
+    else:
+        raise ValueError("eval.backend must be 'manual' or 'vllm'")
 
     validate_eval_summary(summary)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -168,6 +213,30 @@ def _checkpoint_metadata_from_draft(draft_spec) -> tuple[Path | None, dict]:
             if isinstance(meta, dict):
                 return path, meta
     return None, {}
+
+
+def _resolve_draft_id(draft_spec, *, draft_default: str | None = None) -> str | None:
+    if draft_spec in (None, "", "null"):
+        return None
+
+    draft_text = str(draft_spec)
+    draft_key = draft_text.strip().lower()
+    if draft_key in {"none", "null", "vanilla"}:
+        return None
+    if draft_key == "pretrained":
+        if not draft_default:
+            raise ValueError("draft='pretrained' requires model.draft_default to be set")
+        draft_text = draft_default
+
+    draft_path = Path(draft_text).expanduser()
+    root_path = _ROOT / draft_path
+    if draft_path.is_absolute() and draft_path.exists():
+        return str(draft_path)
+    if not draft_path.is_absolute() and (
+        draft_text.startswith(("./", "../")) or root_path.exists()
+    ):
+        return str(root_path)
+    return draft_text
 
 
 def _flatten_wandb_metrics(summary: dict) -> dict[str, Real]:

@@ -61,6 +61,28 @@ def test_response_mask_excludes_prompt_and_pad_tokens():
     assert response_only["loss"] > both["loss"]
 
 
+def test_chunked_kd_matches_unchunked_kd():
+    torch.manual_seed(0)
+    student = torch.randn(2, 5, 11)
+    teacher = torch.randn(2, 5, 11)
+    labels = torch.tensor([[-100, 2, 3, 4, 5], [-100, -100, 6, 7, 8]])
+    mask = labels.ne(-100)
+
+    full = kd_loss(student, teacher, None, None, labels, kind="fkl", alpha=1.0, loss_mask=mask)
+    chunked = kd_loss(
+        student,
+        teacher,
+        None,
+        None,
+        labels,
+        kind="fkl",
+        alpha=1.0,
+        loss_mask=mask,
+        chunk_size=2,
+    )
+    assert torch.allclose(chunked["loss"], full["loss"], atol=1e-6)
+
+
 def test_cached_topk_path_is_explicitly_unsupported_for_kd():
     logits = torch.zeros(1, 2, 3)
     labels = torch.tensor([[-100, 1]])
