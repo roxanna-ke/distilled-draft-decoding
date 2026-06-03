@@ -1,0 +1,36 @@
+# Conservative full-finetune settings for online KD with Qwen3-8B as the
+# frozen target and Qwen3-0.6B as draft on a single 40GB A100.
+draft_init: ${model.draft_default}
+
+max_steps: 4000
+num_train_epochs: 1
+per_device_train_batch_size: 2
+per_device_eval_batch_size: 2
+gradient_accumulation_steps: 16
+learning_rate: 1.0e-5
+weight_decay: 0.0
+warmup_ratio: 0.03
+lr_scheduler_type: cosine
+logging_steps: 10
+save_steps: 500
+eval_steps: 100
+save_total_limit: 2
+bf16: true
+fp16: false
+gradient_checkpointing: true
+dataloader_drop_last: true
+dataloader_num_workers: 2
+remove_unused_columns: false
+report_to_wandb: true
+resume_from_checkpoint: null
+
+overfit_samples: 0
+
+rollin: interleaved
+interleaved_rollout_tokens: 64
+interleaved_student_mode: greedy
+interleaved_student_temperature: 0.3
+interleaved_student_top_p: 1.0
+interleaved_teacher_topk: 1
+
+compile_target: false

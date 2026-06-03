@@ -1,6 +1,20 @@
 n_warmup: 1
 n_repeats: 3
+# manual: project HF instrumented loop with per-step accepted_lens.
+# vllm: offline vLLM speculative decoding for faster batched inference.
+backend: manual
 # Whether to run the vanilla baseline as part of this eval (sets vanilla_time_s).
 run_vanilla_baseline: true
 # Skip vanilla baseline forcibly (e.g. if you already measured it elsewhere).
 write_generations: true
+
+vllm:
+  request_batch_size: 8
+  tensor_parallel_size: 1
+  draft_tensor_parallel_size: 1
+  max_model_len: 2048
+  max_num_seqs: null
+  gpu_memory_utilization: 0.9
+  swap_space: 0
+  enforce_eager: false
+  disable_log_stats: false

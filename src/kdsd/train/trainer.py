@@ -210,28 +210,61 @@ class KDTrainer(Trainer):
         mixed_tokens: list[int] = []
         accepted_tokens = 0
 
-        for _ in range(response_len):
-            student_out = model(input_ids=current_ids, attention_mask=current_attention_mask)
-            student_next = student_out.logits[:, -1, :]
+        student_was_training = model.training
+        if student_was_training:
+            # Roll-in token choices are nondifferentiable. Eval mode also lets
+            # HF models keep KV-cache even when training uses checkpointing.
+            model.eval()
+        try:
+            with torch.no_grad():
+                student_next, student_cache = self._rollin_prefill(
+                    model,
+                    current_ids,
+                    current_attention_mask,
+                )
+                teacher_next = None
+                teacher_cache = None
+                if self.target is not None:
+                    teacher_next, teacher_cache = self._rollin_prefill(
+                        self.target,
+                        current_ids,
+                        current_attention_mask,
+                    )
 
-            teacher_next = None
-            if self.target is not None:
-                with torch.no_grad():
-                    teacher_out = self.target(input_ids=current_ids, attention_mask=current_attention_mask)
-                    teacher_next = teacher_out.logits[:, -1, :]
+            for _ in range(response_len):
+                next_token, accepted = self._select_interleaved_token(
+                    student_next,
+                    teacher_next,
+                    teacher_topk,
+                )
+                mixed_tokens.append(next_token)
+                accepted_tokens += int(accepted)
 
-            next_token, accepted = self._select_interleaved_token(
-                student_next,
-                teacher_next,
-                teacher_topk,
-            )
-            mixed_tokens.append(next_token)
-            accepted_tokens += int(accepted)
+                next_token_tensor = torch.tensor([[next_token]], device=current_ids.device, dtype=current_ids.dtype)
+                current_ids = torch.cat([current_ids, next_token_tensor], dim=1)
+                next_attention = torch.ones((1, 1), device=current_ids.device, dtype=current_attention_mask.dtype)
+                current_attention_mask = torch.cat([current_attention_mask, next_attention], dim=1)
 
-            next_token_tensor = torch.tensor([[next_token]], device=current_ids.device, dtype=current_ids.dtype)
-            current_ids = torch.cat([current_ids, next_token_tensor], dim=1)
-            next_attention = torch.ones((1, 1), device=current_ids.device, dtype=current_attention_mask.dtype)
-            current_attention_mask = torch.cat([current_attention_mask, next_attention], dim=1)
+                if len(mixed_tokens) < response_len:
+                    with torch.no_grad():
+                        student_next, student_cache = self._rollin_advance(
+                            model,
+                            current_ids,
+                            current_attention_mask,
+                            next_token_tensor,
+                            student_cache,
+                        )
+                        if self.target is not None:
+                            teacher_next, teacher_cache = self._rollin_advance(
+                                self.target,
+                                current_ids,
+                                current_attention_mask,
+                                next_token_tensor,
+                                teacher_cache,
+                            )
+        finally:
+            if student_was_training:
+                model.train()
 
         mixed_input_ids = current_ids.squeeze(0)
         mixed_attention_mask = current_attention_mask.squeeze(0)
@@ -247,6 +280,35 @@ class KDTrainer(Trainer):
             accepted_tokens=accepted_tokens,
             proposed_tokens=response_len,
         )
+
+    def _rollin_prefill(
+        self,
+        model: torch.nn.Module,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+    ) -> tuple[torch.Tensor, Any]:
+        out = model(input_ids=input_ids, attention_mask=attention_mask, use_cache=True)
+        return out.logits[:, -1, :], getattr(out, "past_key_values", None)
+
+    def _rollin_advance(
+        self,
+        model: torch.nn.Module,
+        current_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        next_token: torch.Tensor,
+        cache: Any,
+    ) -> tuple[torch.Tensor, Any]:
+        if cache is None:
+            # Tiny/unit-test models often do not implement KV-cache. Keep the
+            # old full-prefix path for them while real HF models use the fast path.
+            return self._rollin_prefill(model, current_ids, attention_mask)
+        out = model(
+            input_ids=next_token,
+            attention_mask=attention_mask,
+            past_key_values=cache,
+            use_cache=True,
+        )
+        return out.logits[:, -1, :], getattr(out, "past_key_values", cache)
 
     def _propose_student_token(self, student_next: torch.Tensor) -> int:
         mode = str(self.train_cfg.get("interleaved_student_mode", "greedy")).lower()

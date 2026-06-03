@@ -1,0 +1,8 @@
+target: Qwen/Qwen3-8B
+draft_default: Qwen/Qwen3-0.6B
+draft_0_6b: Qwen/Qwen3-0.6B
+
+dtype: bfloat16        # bfloat16 | float16 | float32
+device: cuda           # cuda | cpu | auto
+attn_impl: sdpa        # sdpa | eager | flash_attention_2
+trust_remote_code: false

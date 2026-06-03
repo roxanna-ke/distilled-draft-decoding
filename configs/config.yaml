@@ -49,7 +49,7 @@ hf_cache: ${oc.env:HF_HOME,'~/.cache/huggingface'}
 # Optional W&B reporting. Training uses HF Trainer's W&B integration; eval uses
 # this block only when explicitly enabled.
 wandb:
-  enabled: true
+  enabled: false
   project: ${oc.env:WANDB_PROJECT,cs552-kdsd}
   entity: ${oc.env:WANDB_ENTITY,''}
   dir: ${oc.env:WANDB_DIR,wandb}
