@@ -55,7 +55,7 @@ INTERLEAVED_TEACHER_TOPK="${INTERLEAVED_TEACHER_TOPK:-1}"
 RUN_NAME_PREFIX="${RUN_NAME_PREFIX:-qwen3_8btarget_0p6b_interleaved}"
 EXPERIMENT_NAME="${EXPERIMENT_NAME:-${RUN_NAME_PREFIX}_${DATA}_seed${SEED}}"
 WANDB_GROUP="${WANDB_GROUP:-${EXPERIMENT_NAME}}"
-REPO_BRANCH="${REPO_BRANCH:-main}"
+REPO_BRANCH="${REPO_BRANCH:-interleaved}"
 REPO_URL="${REPO_URL:-https://github.com/roxanna-ke/distilled-draft-decoding.git}"
 
 quote() {
