@@ -25,6 +25,8 @@ CHECKPOINTS_DIR="${CHECKPOINTS_DIR:-${WORKSPACE_ROOT}/checkpoints}"
 DATA_DIR="${DATA_DIR:-${WORKSPACE_ROOT}/data}"
 HYDRA_OUTPUTS_DIR="${HYDRA_OUTPUTS_DIR:-${WORKSPACE_ROOT}/hydra}"
 WANDB_DIR="${WANDB_DIR:-${WORKSPACE_ROOT}/wandb}"
+KDSD_VENV="${KDSD_VENV:-/scratch/venvs/kdsd-vllm}"
+KDSD_PYTHON="${KDSD_PYTHON:-${KDSD_VENV}/bin/python}"
 
 # Checkpoint naming convention matches rcp_support/eval_ep_loop.sh:
 #   ${CHECKPOINTS_DIR}/{fkl,rkl,jsd}_${RUN_NAME_SUFFIX}/model
@@ -93,6 +95,8 @@ export CHECKPOINTS_DIR
 export DATA_DIR
 export HYDRA_OUTPUTS_DIR
 export WANDB_DIR
+export KDSD_VENV
+export KDSD_PYTHON
 export RUN_NAME="eval_${RUN_NAME_SUFFIX}_vllm"
 export RUN_COMMAND
 export RUN_NAME_SUFFIX

@@ -51,6 +51,27 @@ mkdir -p "${HF_HUB_CACHE}" "${HF_DATASETS_CACHE}"
 
 cd "${REPO_DIR}"
 
+if [[ ! -f scripts/env.sh ]]; then
+  echo "ERROR: missing scripts/env.sh in ${REPO_DIR}" >&2
+  exit 1
+fi
+
+# Prefer the dedicated vLLM 0.22 environment over the course image's bundled
+# Python/vLLM, which may be too old for draft-model speculative decoding.
+source scripts/env.sh
+
+if [[ ! -x "${KDSD_PYTHON}" ]]; then
+  echo "ERROR: KDSD_PYTHON is not executable: ${KDSD_PYTHON}" >&2
+  exit 1
+fi
+if [[ "${KDSD_PYTHON}" != "${KDSD_VENV}/bin/python" ]]; then
+  echo "ERROR: expected scripts/env.sh to select ${KDSD_VENV}/bin/python, got ${KDSD_PYTHON}" >&2
+  exit 1
+fi
+
+echo ">>> Python executable: ${KDSD_PYTHON}"
+"${KDSD_PYTHON}" -c "import sys, vllm; print('>>> sys.executable:', sys.executable); print('>>> vllm version:', vllm.__version__)"
+
 echo ">>> Repo branch: ${REPO_BRANCH:-unknown}"
 echo ">>> Checkpoints dir: ${CHECKPOINTS_DIR}"
 echo ">>> Results root: ${RESULTS_DIR}"
@@ -89,7 +110,7 @@ for draft_name in "${draft_names[@]}"; do
   hydra_dir="${HYDRA_OUTPUTS_DIR}/${eval_run_name}"
 
   cmd=(
-    python scripts/evaluate_sd.py
+    "${KDSD_PYTHON}" scripts/evaluate_sd.py
     data="${DATASET}"
     seed="${SEED}"
     run_name="${eval_run_name}"
