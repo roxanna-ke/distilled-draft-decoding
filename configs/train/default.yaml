@@ -28,5 +28,18 @@ resume_from_checkpoint: null
 # revisits a tiny fixed set. Use 0 for normal training.
 overfit_samples: 0
 
+# Prefix policy used when training the draft.
+# - teacher_forcing: offline KD on prompt + reference response
+# - interleaved: SKD-style corrective roll-in. The student proposes up to
+#   interleaved_rollout_tokens tokens, the teacher accepts proposals that fall
+#   within its top-k, and replaces rejected proposals with its top-1 token.
+#   The resulting mixed trajectory is then used for ordinary full-sequence KD.
+rollin: teacher_forcing
+interleaved_rollout_tokens: 64
+interleaved_student_mode: greedy
+interleaved_student_temperature: 0.3
+interleaved_student_top_p: 1.0
+interleaved_teacher_topk: 1
+
 # Frozen target forward options.
 compile_target: false

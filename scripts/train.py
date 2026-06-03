@@ -146,6 +146,7 @@ def _run(cfg: DictConfig) -> None:
         data_collator=KDCollator(tokenizer),
         tokenizer=tokenizer,
         kd_cfg=OmegaConf.to_container(cfg.loss, resolve=True),
+        train_cfg=OmegaConf.to_container(cfg.train, resolve=True),
     )
     result = trainer.train(resume_from_checkpoint=cfg.train.resume_from_checkpoint)
     trainer.save_model(out_dir / "model")
