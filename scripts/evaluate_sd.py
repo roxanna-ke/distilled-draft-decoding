@@ -295,22 +295,13 @@ def _report_eval_to_wandb(
         train_wandb = {}
 
     checkpoint_run_name = checkpoint_meta.get("run_name") if isinstance(checkpoint_meta, dict) else None
-    run_name = str(checkpoint_run_name or cfg.run_name)
-    run_id = train_wandb.get("id")
-    if checkpoint_meta and not run_id:
-        log.warning(
-            "Checkpoint metadata has no wandb.id; logging eval under name=%s "
-            "without guaranteed historical-run resume",
-            run_name,
-        )
+    run_name = str(cfg.run_name)
 
     project = str(train_wandb.get("project") or wandb_cfg.project)
     entity = str(train_wandb.get("entity") or wandb_cfg.entity or "")
     init_kwargs = {
         "project": project,
         "name": run_name,
-        "id": run_id,
-        "resume": str(wandb_cfg.resume),
         "dir": str(_resolve_optional_path(wandb_cfg.dir)),
         "mode": str(wandb_cfg.mode),
         "config": _wandb_eval_config(
@@ -327,9 +318,21 @@ def _report_eval_to_wandb(
     run = wandb.init(**init_kwargs)
     try:
         wandb.log(_flatten_wandb_metrics(summary))
+        _upload_eval_files_to_wandb(wandb=wandb, out_dir=out_dir, log=log)
     finally:
         if run is not None:
             wandb.finish()
+
+
+def _upload_eval_files_to_wandb(*, wandb, out_dir: Path, log) -> None:
+    for name in ("eval_summary.json", "timing.json", "config.yaml", "generations.jsonl"):
+        path = out_dir / name
+        if not path.exists():
+            continue
+        try:
+            wandb.save(str(path), base_path=str(out_dir), policy="now")
+        except Exception as exc:
+            log.warning("Failed to upload %s to W&B: %s", path, exc)
 
 
 def _resolve_optional_path(path_like) -> Path:

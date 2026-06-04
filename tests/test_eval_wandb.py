@@ -67,12 +67,15 @@ def test_flatten_wandb_metrics_includes_summary_engine_and_quality():
     assert "eval/hf/note" not in metrics
 
 
-def test_report_eval_to_wandb_uses_checkpoint_run_identity(monkeypatch, tmp_path):
-    calls = {"init": None, "log": None, "finished": False}
+def test_report_eval_to_wandb_creates_new_eval_run_and_uploads_files(monkeypatch, tmp_path):
+    calls = {"init": None, "log": None, "save": [], "finished": False}
 
     fake_wandb = SimpleNamespace(
         init=lambda **kwargs: calls.__setitem__("init", kwargs) or object(),
         log=lambda metrics: calls.__setitem__("log", metrics),
+        save=lambda path, base_path=None, policy=None: calls["save"].append(
+            {"path": path, "base_path": base_path, "policy": policy}
+        ),
         finish=lambda: calls.__setitem__("finished", True),
     )
     monkeypatch.setitem(sys.modules, "wandb", fake_wandb)
@@ -115,22 +118,34 @@ def test_report_eval_to_wandb_uses_checkpoint_run_identity(monkeypatch, tmp_path
         },
     }
     log = SimpleNamespace(warning=lambda *args, **kwargs: None)
+    out_dir = tmp_path / "results"
+    out_dir.mkdir()
+    for name in ("eval_summary.json", "timing.json", "config.yaml", "generations.jsonl"):
+        (out_dir / name).write_text("{}", encoding="utf-8")
 
     evaluate_sd._report_eval_to_wandb(
         cfg=cfg,
         summary=summary,
-        out_dir=tmp_path / "results",
+        out_dir=out_dir,
         checkpoint_meta=checkpoint_meta,
         checkpoint_meta_path=tmp_path / "checkpoints" / "train-run" / "meta.json",
         log=log,
     )
 
-    assert calls["init"]["id"] == "wandb-id"
-    assert calls["init"]["name"] == "train-run"
+    assert "id" not in calls["init"]
+    assert "resume" not in calls["init"]
+    assert calls["init"]["name"] == "eval-run"
     assert calls["init"]["project"] == "train-project"
     assert calls["init"]["entity"] == "train-entity"
-    assert calls["init"]["resume"] == "allow"
     assert calls["init"]["mode"] == "offline"
     assert calls["log"]["eval/speedup"] == 1.2
     assert calls["log"]["eval/acceptance_rate"] == 0.25
+    assert [entry["path"] for entry in calls["save"]] == [
+        str(out_dir / "eval_summary.json"),
+        str(out_dir / "timing.json"),
+        str(out_dir / "config.yaml"),
+        str(out_dir / "generations.jsonl"),
+    ]
+    assert all(entry["base_path"] == str(out_dir) for entry in calls["save"])
+    assert all(entry["policy"] == "now" for entry in calls["save"])
     assert calls["finished"] is True
