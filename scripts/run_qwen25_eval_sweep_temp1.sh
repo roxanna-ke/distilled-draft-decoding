@@ -35,7 +35,6 @@ FORCE_RERUN="${FORCE_RERUN:-false}"
 RESULTS_ROOT="${RESULTS_ROOT:-${WORKSPACE_ROOT}/results}"
 CHECKPOINT_ROOT="${CHECKPOINT_ROOT:-${WORKSPACE_ROOT}/checkpoints}"
 HYDRA_ROOT="${HYDRA_ROOT:-${WORKSPACE_ROOT}/hydra/qwen25-eval-sweep-temp1}"
-PRETRAINED_CHECKPOINT_ROOT="${PRETRAINED_CHECKPOINT_ROOT:-${CHECKPOINT_ROOT}/pretrained}"
 
 case "${DRAFT_SIZE}" in
   0.5b|0_5b)
@@ -178,7 +177,6 @@ run_eval() {
   "${KDSD_PYTHON}" scripts/evaluate_sd.py \
     model=qwen25 "data=${DATA}" "${target_override[@]}" \
     "draft=${draft}" \
-    "pretrained_checkpoint_root=${PRETRAINED_CHECKPOINT_ROOT}" \
     "prompts.jsonl=${EVAL_PROMPTS_JSONL}" \
     "prompts.hf_dataset=null" \
     "prompts.limit=${EVAL_PROMPTS_LIMIT}" \
@@ -198,7 +196,7 @@ run_eval() {
 }
 
 export PYTORCH_CUDA_ALLOC_CONF
-mkdir -p "${RESULTS_ROOT}" "${HYDRA_ROOT}" "${PRETRAINED_CHECKPOINT_ROOT}"
+mkdir -p "${RESULTS_ROOT}" "${HYDRA_ROOT}"
 
 echo ">>> Qwen2.5 eval sweep: ${EXPERIMENT_NAME}"
 echo ">>> workspace root: ${WORKSPACE_ROOT}"
@@ -207,7 +205,6 @@ echo ">>> run name prefix: ${RUN_NAME_PREFIX}"
 echo ">>> losses/checkpoints: ${LOSSES}"
 echo ">>> checkpoint root: ${CHECKPOINT_ROOT}"
 echo ">>> results root: ${RESULTS_ROOT}"
-echo ">>> pretrained checkpoint root: ${PRETRAINED_CHECKPOINT_ROOT}"
 echo ">>> eval pretrained baseline: ${EVAL_PRETRAINED_BASELINE}"
 echo ">>> eval prompts: ${EVAL_PROMPTS_JSONL}"
 echo ">>> eval prompts limit: ${EVAL_PROMPTS_LIMIT}"

@@ -31,8 +31,6 @@ FORCE_RERUN="${FORCE_RERUN:-false}"
 RESULTS_ROOT="${RESULTS_ROOT:-${WORKSPACE_ROOT}/results}"
 CHECKPOINT_ROOT="${CHECKPOINT_ROOT:-${WORKSPACE_ROOT}/checkpoints}"
 HYDRA_ROOT="${HYDRA_ROOT:-${WORKSPACE_ROOT}/hydra/qwen25-eval-sweep-temp1}"
-PRETRAINED_CHECKPOINT_ROOT="${PRETRAINED_CHECKPOINT_ROOT:-${CHECKPOINT_ROOT}/pretrained}"
-
 REPO_BRANCH="${REPO_BRANCH:-vllm-eval}"
 
 case "${DRAFT_SIZE}" in
@@ -77,7 +75,6 @@ run_command+=" FORCE_RERUN=$(quote "${FORCE_RERUN}")"
 run_command+=" RESULTS_ROOT=$(quote "${RESULTS_ROOT}")"
 run_command+=" CHECKPOINT_ROOT=$(quote "${CHECKPOINT_ROOT}")"
 run_command+=" HYDRA_ROOT=$(quote "${HYDRA_ROOT}")"
-run_command+=" PRETRAINED_CHECKPOINT_ROOT=$(quote "${PRETRAINED_CHECKPOINT_ROOT}")"
 run_command+=" LOSSES=$(quote "${LOSSES}")"
 run_command+=" EXPERIMENT_NAME=$(quote "${EXPERIMENT_NAME}")"
 run_command+=" WANDB_GROUP=$(quote "${WANDB_GROUP}")"
