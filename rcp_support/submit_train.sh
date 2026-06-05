@@ -10,15 +10,15 @@ set -euo pipefail
 
 # ============== EDIT THESE LINES ==============
 RUN_NAME="${RUN_NAME:-debug_fkl_overfit}"  # Used in W&B and the default Hydra run_name override.
-GASPAR="${GASPAR:-youyang}"               # YOUR GASPAR EPFL username.
+GASPAR="${GASPAR:-ke}"               # YOUR GASPAR EPFL username.
 GROUP="${GROUP:-g67}"                     # YOUR TEAM, e.g. g07.
 WANDB_MODE="${WANDB_MODE:-online}"       # online, offline, or disabled.
 
 # Public source checkout. Each job fetches this branch and resets the checkout
 # before running RUN_COMMAND, so new remote code is picked up automatically.
-REPO_URL="${REPO_URL:-https://github.com/ouyangyuchen/knowledge-distill-for-spec-decoding.git}"
-REPO_BRANCH="${REPO_BRANCH:-train}"
-REPO_DIR="${REPO_DIR:-/scratch/cs552-repos/cs552-kdsd-${GASPAR}}"
+REPO_URL="${REPO_URL:-https://github.com/roxanna-ke/distilled-draft-decoding.git}"
+REPO_BRANCH="${REPO_BRANCH:-vllm-eval}"
+REPO_DIR="${REPO_DIR:-/scratch/cs552-repos/distilled-draft-decoding-${GASPAR}}"
 
 # Persistent artifact locations outside the managed source checkout.
 CHECKPOINTS_DIR="${CHECKPOINTS_DIR:-/scratch/cs552-checkpoints}"
