@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from omegaconf import OmegaConf
+from transformers import TrainingArguments
 
 from scripts import train as train_script
 
@@ -103,3 +104,41 @@ def test_ensure_training_data_prepares_base_before_target_generation(tmp_path, m
 
     assert calls == ["prepare", "generate"]
     assert train_path.exists()
+
+
+def test_training_args_disable_eval_when_eval_steps_non_positive(tmp_path):
+    cfg = OmegaConf.create(
+        {
+            "run_name": "toy",
+            "seed": 42,
+            "model": {"device": "cpu"},
+            "train": {
+                "per_device_train_batch_size": 1,
+                "per_device_eval_batch_size": 1,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 1.0e-5,
+                "weight_decay": 0.0,
+                "warmup_ratio": 0.0,
+                "lr_scheduler_type": "cosine",
+                "logging_steps": 10,
+                "save_steps": 100,
+                "eval_steps": 0,
+                "save_total_limit": 1,
+                "bf16": False,
+                "fp16": False,
+                "dataloader_drop_last": False,
+                "dataloader_num_workers": 0,
+                "remove_unused_columns": False,
+                "report_to_wandb": False,
+                "max_steps": 1,
+            },
+        }
+    )
+
+    args = train_script._training_args(
+        cfg,
+        out_dir=tmp_path,
+        cls=TrainingArguments,
+        do_eval=True,
+    )
+    assert args.eval_strategy == "no"

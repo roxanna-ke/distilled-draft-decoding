@@ -13,7 +13,7 @@ warmup_ratio: 0.03
 lr_scheduler_type: cosine
 logging_steps: 10
 save_steps: 500
-eval_steps: 100
+eval_steps: 0
 save_total_limit: 2
 bf16: true
 fp16: false
@@ -27,7 +27,7 @@ resume_from_checkpoint: null
 overfit_samples: 0
 
 rollin: interleaved
-interleaved_rollout_tokens: 64
+interleaved_rollout_tokens: 32
 interleaved_student_mode: greedy
 interleaved_student_temperature: 0.3
 interleaved_student_top_p: 1.0

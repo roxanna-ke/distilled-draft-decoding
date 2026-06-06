@@ -33,10 +33,10 @@ TEMP="${TEMP:-1.0}"
 MAX_SEQ_LEN="${MAX_SEQ_LEN:-1024}"
 KD_CHUNK_SIZE="${KD_CHUNK_SIZE:-128}"
 COMPILE_TARGET="${COMPILE_TARGET:-false}"
-EVAL_REPORTING_STEPS="${EVAL_REPORTING_STEPS:-100}"
+EVAL_REPORTING_STEPS="${EVAL_REPORTING_STEPS:-0}"
 PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 TRAIN_ROLLIN="${TRAIN_ROLLIN:-interleaved}"
-INTERLEAVED_ROLLOUT_TOKENS="${INTERLEAVED_ROLLOUT_TOKENS:-64}"
+INTERLEAVED_ROLLOUT_TOKENS="${INTERLEAVED_ROLLOUT_TOKENS:-32}"
 INTERLEAVED_STUDENT_MODE="${INTERLEAVED_STUDENT_MODE:-greedy}"
 INTERLEAVED_STUDENT_TEMPERATURE="${INTERLEAVED_STUDENT_TEMPERATURE:-0.3}"
 INTERLEAVED_STUDENT_TOP_P="${INTERLEAVED_STUDENT_TOP_P:-1.0}"
@@ -46,9 +46,12 @@ RUN_EVAL="${RUN_EVAL:-true}"
 EVAL_PRETRAINED_BASELINE="${EVAL_PRETRAINED_BASELINE:-true}"
 EVAL_BACKEND="${EVAL_BACKEND:-vllm}"
 EVAL_PROMPTS_JSONL="${EVAL_PROMPTS_JSONL:-/scratch/cs552-data/processed/${DATA}/eval.jsonl}"
-EVAL_PROMPTS_LIMIT="${EVAL_PROMPTS_LIMIT:-50}"
+EVAL_PROMPTS_LIMIT="${EVAL_PROMPTS_LIMIT:-256}"
 EVAL_GAMMA="${EVAL_GAMMA:-4}"
 EVAL_MAX_NEW_TOKENS="${EVAL_MAX_NEW_TOKENS:-256}"
+EVAL_MODE="${EVAL_MODE:-sampling}"
+EVAL_TEMPERATURE="${EVAL_TEMPERATURE:-1.0}"
+EVAL_TOP_P="${EVAL_TOP_P:-0.9}"
 EVAL_WARMUP="${EVAL_WARMUP:-1}"
 EVAL_REPEATS="${EVAL_REPEATS:-3}"
 EVAL_REQUEST_BATCH_SIZE="${EVAL_REQUEST_BATCH_SIZE:-8}"
@@ -74,11 +77,44 @@ echo ">>> train rollin: ${TRAIN_ROLLIN}"
 echo ">>> interleaved rollout/top-k: ${INTERLEAVED_ROLLOUT_TOKENS}/${INTERLEAVED_TEACHER_TOPK}"
 echo ">>> eval backend: ${EVAL_BACKEND}"
 echo ">>> eval prompts: ${EVAL_PROMPTS_JSONL} limit=${EVAL_PROMPTS_LIMIT}"
+echo ">>> eval mode/temp/top_p: ${EVAL_MODE}/${EVAL_TEMPERATURE}/${EVAL_TOP_P}"
 echo ">>> eval gamma/max_new: ${EVAL_GAMMA}/${EVAL_MAX_NEW_TOKENS}"
 
 export PYTORCH_CUDA_ALLOC_CONF
 export WORK_ROOT CHECKPOINTS_ROOT RESULTS_DIR_ROOT
 mkdir -p "${CHECKPOINTS_ROOT}" "${RESULTS_DIR_ROOT}"
+
+verify_vllm_eval() {
+  local summary_path="$1"
+  local expected_draft="$2"
+  "${KDSD_PYTHON}" - "${summary_path}" "${expected_draft}" <<'PY'
+import json
+import math
+import sys
+from pathlib import Path
+
+summary_path = Path(sys.argv[1])
+expected_draft = sys.argv[2].lower() in {"1", "true", "yes"}
+with summary_path.open("r", encoding="utf-8") as fh:
+    summary = json.load(fh)
+
+engines = summary.get("engines") or {}
+vllm = engines.get("vllm")
+if not isinstance(vllm, dict):
+    raise SystemExit(f"{summary_path}: expected engines.vllm in eval summary")
+
+speedup = float(summary.get("speedup", float("nan")))
+acceptance = float(summary.get("acceptance_rate", float("nan")))
+if not math.isfinite(speedup) or not math.isfinite(acceptance):
+    raise SystemExit(f"{summary_path}: non-finite speedup/acceptance_rate")
+
+if expected_draft:
+    if int(vllm.get("num_draft_tokens", 0)) <= 0:
+        raise SystemExit(f"{summary_path}: vLLM ran without speculative draft tokens")
+    if int(vllm.get("num_drafts", 0)) <= 0:
+        raise SystemExit(f"{summary_path}: vLLM summary shows zero draft steps")
+PY
+}
 
 for loss in ${LOSSES}; do
   run_name="${RUN_NAME_PREFIX}_${loss}_${DATA}_a${ALPHA}_seed${SEED}"
@@ -136,6 +172,9 @@ if [[ "${EVAL_PRETRAINED_BASELINE}" == "true" || "${EVAL_PRETRAINED_BASELINE}" =
     "draft=${DRAFT_ID}" \
     "prompts.jsonl=${EVAL_PROMPTS_JSONL}" \
     "prompts.limit=${EVAL_PROMPTS_LIMIT}" \
+    "runtime.mode=${EVAL_MODE}" \
+    "runtime.temperature=${EVAL_TEMPERATURE}" \
+    "runtime.top_p=${EVAL_TOP_P}" \
     "runtime.gamma=${EVAL_GAMMA}" \
     "runtime.max_new_tokens=${EVAL_MAX_NEW_TOKENS}" \
     "eval.backend=${EVAL_BACKEND}" \
@@ -147,6 +186,7 @@ if [[ "${EVAL_PRETRAINED_BASELINE}" == "true" || "${EVAL_PRETRAINED_BASELINE}" =
     "wandb.enabled=${EVAL_REPORT_TO_WANDB}" \
     "results_dir=${baseline_results_dir}" \
     "run_name=${baseline_eval_run}"
+  verify_vllm_eval "${baseline_results_dir}/eval_summary.json" true
   eval_result_runs+=("${baseline_eval_run}")
 fi
 
@@ -164,6 +204,9 @@ for loss in ${LOSSES}; do
     "draft=${checkpoint_dir}/model" \
     "prompts.jsonl=${EVAL_PROMPTS_JSONL}" \
     "prompts.limit=${EVAL_PROMPTS_LIMIT}" \
+    "runtime.mode=${EVAL_MODE}" \
+    "runtime.temperature=${EVAL_TEMPERATURE}" \
+    "runtime.top_p=${EVAL_TOP_P}" \
     "runtime.gamma=${EVAL_GAMMA}" \
     "runtime.max_new_tokens=${EVAL_MAX_NEW_TOKENS}" \
     "eval.backend=${EVAL_BACKEND}" \
@@ -175,6 +218,7 @@ for loss in ${LOSSES}; do
     "wandb.enabled=${EVAL_REPORT_TO_WANDB}" \
     "results_dir=${eval_results_dir}" \
     "run_name=${eval_run}"
+  verify_vllm_eval "${eval_results_dir}/eval_summary.json" true
   eval_result_runs+=("${eval_run}")
 done
 

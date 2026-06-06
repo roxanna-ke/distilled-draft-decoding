@@ -251,6 +251,8 @@ def _run_target_response_generation(cfg: DictConfig) -> None:
 
 def _training_args(cfg: DictConfig, out_dir: Path, cls, *, do_eval: bool):
     train = cfg.train
+    eval_steps = int(train.eval_steps)
+    enable_eval = bool(do_eval and eval_steps > 0)
     kwargs = {
         "output_dir": str(out_dir / "trainer_state"),
         "run_name": str(cfg.run_name),
@@ -263,7 +265,7 @@ def _training_args(cfg: DictConfig, out_dir: Path, cls, *, do_eval: bool):
         "lr_scheduler_type": str(train.lr_scheduler_type),
         "logging_steps": int(train.logging_steps),
         "save_steps": int(train.save_steps),
-        "eval_steps": int(train.eval_steps),
+        "eval_steps": eval_steps,
         "save_total_limit": int(train.save_total_limit),
         "bf16": bool(train.bf16),
         "fp16": bool(train.fp16),
@@ -280,7 +282,7 @@ def _training_args(cfg: DictConfig, out_dir: Path, cls, *, do_eval: bool):
         kwargs["num_train_epochs"] = float(train.num_train_epochs)
 
     params = inspect.signature(cls.__init__).parameters
-    strategy = "steps" if do_eval else "no"
+    strategy = "steps" if enable_eval else "no"
     if "eval_strategy" in params:
         kwargs["eval_strategy"] = strategy
     else:

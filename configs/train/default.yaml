@@ -35,7 +35,7 @@ overfit_samples: 0
 #   within its top-k, and replaces rejected proposals with its top-1 token.
 #   The resulting mixed trajectory is then used for ordinary full-sequence KD.
 rollin: teacher_forcing
-interleaved_rollout_tokens: 64
+interleaved_rollout_tokens: 32
 interleaved_student_mode: greedy
 interleaved_student_temperature: 0.3
 interleaved_student_top_p: 1.0
