@@ -7,6 +7,7 @@ a dict (possibly empty); aggregate_results.py reads `quality_score.<name>`.
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
@@ -47,14 +48,26 @@ def write_jsonl(path: str | Path, rows: Iterable[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as fh:
         for row in rows:
-            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+            fh.write(json.dumps(_json_safe(row), ensure_ascii=False) + "\n")
 
 
 def write_json(path: str | Path, obj: Any) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as fh:
-        json.dump(obj, fh, indent=2, ensure_ascii=False)
+        json.dump(_json_safe(obj), fh, indent=2, ensure_ascii=False)
+
+
+def _json_safe(obj: Any) -> Any:
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, tuple):
+        return [_json_safe(v) for v in obj]
+    return obj
 
 
 def validate_eval_summary(summary: dict[str, Any]) -> None:
