@@ -1,5 +1,6 @@
 #!/bin/bash
-# Run Qwen3-8B / Qwen3-0.6B KD loss sweep, then evaluate each draft with vLLM.
+# Run Qwen3-8B / Qwen3-0.6B KD loss sweep, evaluating each draft immediately
+# after its training completes.
 # This script is intended to run inside the RunAI pod from the checked-out repo.
 
 set -euo pipefail
@@ -23,7 +24,7 @@ DRAFT_ID="${DRAFT_ID:-Qwen/Qwen3-0.6B}"
 RUN_NAME_PREFIX="${RUN_NAME_PREFIX:-qwen3_8btarget_0p6b_interleaved}"
 SEED="${SEED:-42}"
 
-STEPS="${STEPS:-0}"
+STEPS="${STEPS:-500}"
 EPOCHS="${EPOCHS:-1}"
 BATCH_SIZE="${BATCH_SIZE:-2}"
 GRAD_ACCUM_STEPS="${GRAD_ACCUM_STEPS:-16}"
@@ -116,6 +117,37 @@ if expected_draft:
 PY
 }
 
+eval_result_runs=()
+
+if [[ ("${RUN_EVAL}" == "true" || "${RUN_EVAL}" == "1") && ("${EVAL_PRETRAINED_BASELINE}" == "true" || "${EVAL_PRETRAINED_BASELINE}" == "1") ]]; then
+  baseline_eval_run="${RUN_NAME_PREFIX}_pretrain_${DATA}_seed${SEED}_vllm_g${EVAL_GAMMA}_max${EVAL_MAX_NEW_TOKENS}"
+  baseline_results_dir="${RESULTS_DIR_ROOT}/${baseline_eval_run}"
+  echo ">>> Evaluating pretrained draft baseline: ${baseline_eval_run}"
+  "${KDSD_PYTHON}" scripts/evaluate_sd.py \
+    model=qwen3 "data=${DATA}" \
+    "model.target=${TARGET_ID}" \
+    "model.draft_default=${DRAFT_ID}" \
+    "draft=${DRAFT_ID}" \
+    "prompts.jsonl=${EVAL_PROMPTS_JSONL}" \
+    "prompts.limit=${EVAL_PROMPTS_LIMIT}" \
+    "runtime.mode=${EVAL_MODE}" \
+    "runtime.temperature=${EVAL_TEMPERATURE}" \
+    "runtime.top_p=${EVAL_TOP_P}" \
+    "runtime.gamma=${EVAL_GAMMA}" \
+    "runtime.max_new_tokens=${EVAL_MAX_NEW_TOKENS}" \
+    "eval.backend=${EVAL_BACKEND}" \
+    "eval.n_warmup=${EVAL_WARMUP}" \
+    "eval.n_repeats=${EVAL_REPEATS}" \
+    "eval.vllm.request_batch_size=${EVAL_REQUEST_BATCH_SIZE}" \
+    "eval.vllm.max_model_len=${EVAL_MAX_MODEL_LEN}" \
+    "eval.vllm.gpu_memory_utilization=${EVAL_GPU_MEMORY_UTILIZATION}" \
+    "wandb.enabled=${EVAL_REPORT_TO_WANDB}" \
+    "results_dir=${baseline_results_dir}" \
+    "run_name=${baseline_eval_run}"
+  verify_vllm_eval "${baseline_results_dir}/eval_summary.json" true
+  eval_result_runs+=("${baseline_eval_run}")
+fi
+
 for loss in ${LOSSES}; do
   run_name="${RUN_NAME_PREFIX}_${loss}_${DATA}_a${ALPHA}_seed${SEED}"
   checkpoint_dir="${CHECKPOINTS_ROOT}/${run_name}"
@@ -152,48 +184,12 @@ for loss in ${LOSSES}; do
     "run_name=${run_name}"
 
   echo ">>> Finished training: ${run_name}"
-done
 
-if [[ "${RUN_EVAL}" != "true" && "${RUN_EVAL}" != "1" ]]; then
-  echo ">>> RUN_EVAL=${RUN_EVAL}; skipping SD evaluation"
-  exit 0
-fi
+  if [[ "${RUN_EVAL}" != "true" && "${RUN_EVAL}" != "1" ]]; then
+    continue
+  fi
 
-eval_result_runs=()
-
-if [[ "${EVAL_PRETRAINED_BASELINE}" == "true" || "${EVAL_PRETRAINED_BASELINE}" == "1" ]]; then
-  baseline_eval_run="${RUN_NAME_PREFIX}_pretrain_${DATA}_seed${SEED}_vllm_g${EVAL_GAMMA}_max${EVAL_MAX_NEW_TOKENS}"
-  baseline_results_dir="${RESULTS_DIR_ROOT}/${baseline_eval_run}"
-  echo ">>> Evaluating pretrained draft baseline: ${baseline_eval_run}"
-  "${KDSD_PYTHON}" scripts/evaluate_sd.py \
-    model=qwen3 "data=${DATA}" \
-    "model.target=${TARGET_ID}" \
-    "model.draft_default=${DRAFT_ID}" \
-    "draft=${DRAFT_ID}" \
-    "prompts.jsonl=${EVAL_PROMPTS_JSONL}" \
-    "prompts.limit=${EVAL_PROMPTS_LIMIT}" \
-    "runtime.mode=${EVAL_MODE}" \
-    "runtime.temperature=${EVAL_TEMPERATURE}" \
-    "runtime.top_p=${EVAL_TOP_P}" \
-    "runtime.gamma=${EVAL_GAMMA}" \
-    "runtime.max_new_tokens=${EVAL_MAX_NEW_TOKENS}" \
-    "eval.backend=${EVAL_BACKEND}" \
-    "eval.n_warmup=${EVAL_WARMUP}" \
-    "eval.n_repeats=${EVAL_REPEATS}" \
-    "eval.vllm.request_batch_size=${EVAL_REQUEST_BATCH_SIZE}" \
-    "eval.vllm.max_model_len=${EVAL_MAX_MODEL_LEN}" \
-    "eval.vllm.gpu_memory_utilization=${EVAL_GPU_MEMORY_UTILIZATION}" \
-    "wandb.enabled=${EVAL_REPORT_TO_WANDB}" \
-    "results_dir=${baseline_results_dir}" \
-    "run_name=${baseline_eval_run}"
-  verify_vllm_eval "${baseline_results_dir}/eval_summary.json" true
-  eval_result_runs+=("${baseline_eval_run}")
-fi
-
-for loss in ${LOSSES}; do
-  train_run="${RUN_NAME_PREFIX}_${loss}_${DATA}_a${ALPHA}_seed${SEED}"
-  eval_run="${train_run}_vllm_g${EVAL_GAMMA}_max${EVAL_MAX_NEW_TOKENS}"
-  checkpoint_dir="${CHECKPOINTS_ROOT}/${train_run}"
+  eval_run="${run_name}_vllm_g${EVAL_GAMMA}_max${EVAL_MAX_NEW_TOKENS}"
   eval_results_dir="${RESULTS_DIR_ROOT}/${eval_run}"
 
   echo ">>> Evaluating trained draft: ${eval_run}"
@@ -221,6 +217,11 @@ for loss in ${LOSSES}; do
   verify_vllm_eval "${eval_results_dir}/eval_summary.json" true
   eval_result_runs+=("${eval_run}")
 done
+
+if [[ "${RUN_EVAL}" != "true" && "${RUN_EVAL}" != "1" ]]; then
+  echo ">>> RUN_EVAL=${RUN_EVAL}; skipping SD evaluation"
+  exit 0
+fi
 
 echo ">>> Final SD evaluation summary"
 "${KDSD_PYTHON}" - "${eval_result_runs[@]}" <<'PY'
