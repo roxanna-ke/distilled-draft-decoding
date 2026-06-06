@@ -60,7 +60,13 @@ EVAL_MAX_MODEL_LEN="${EVAL_MAX_MODEL_LEN:-2048}"
 EVAL_GPU_MEMORY_UTILIZATION="${EVAL_GPU_MEMORY_UTILIZATION:-0.9}"
 EVAL_REPORT_TO_WANDB="${EVAL_REPORT_TO_WANDB:-true}"
 
-EXPERIMENT_NAME="${EXPERIMENT_NAME:-${RUN_NAME_PREFIX}_${DATA}_seed${SEED}}"
+if [[ "${STEPS}" =~ ^[0-9]+$ ]] && [[ "${STEPS}" -gt 0 ]]; then
+  STEP_TAG="s${STEPS}"
+else
+  STEP_TAG="e${EPOCHS}"
+fi
+RUN_NAME_PREFIX_TAGGED="${RUN_NAME_PREFIX}_${STEP_TAG}"
+EXPERIMENT_NAME="${EXPERIMENT_NAME:-${RUN_NAME_PREFIX_TAGGED}_${DATA}_seed${SEED}}"
 WANDB_GROUP="${WANDB_GROUP:-${EXPERIMENT_NAME}}"
 
 echo ">>> Experiment: ${EXPERIMENT_NAME}"
@@ -120,7 +126,7 @@ PY
 eval_result_runs=()
 
 if [[ ("${RUN_EVAL}" == "true" || "${RUN_EVAL}" == "1") && ("${EVAL_PRETRAINED_BASELINE}" == "true" || "${EVAL_PRETRAINED_BASELINE}" == "1") ]]; then
-  baseline_eval_run="${RUN_NAME_PREFIX}_pretrain_${DATA}_seed${SEED}_vllm_g${EVAL_GAMMA}_max${EVAL_MAX_NEW_TOKENS}"
+  baseline_eval_run="${RUN_NAME_PREFIX_TAGGED}_pretrain_${DATA}_seed${SEED}_vllm_g${EVAL_GAMMA}_max${EVAL_MAX_NEW_TOKENS}"
   baseline_results_dir="${RESULTS_DIR_ROOT}/${baseline_eval_run}"
   echo ">>> Evaluating pretrained draft baseline: ${baseline_eval_run}"
   "${KDSD_PYTHON}" scripts/evaluate_sd.py \
@@ -149,7 +155,7 @@ if [[ ("${RUN_EVAL}" == "true" || "${RUN_EVAL}" == "1") && ("${EVAL_PRETRAINED_B
 fi
 
 for loss in ${LOSSES}; do
-  run_name="${RUN_NAME_PREFIX}_${loss}_${DATA}_a${ALPHA}_seed${SEED}"
+  run_name="${RUN_NAME_PREFIX_TAGGED}_${loss}_${DATA}_a${ALPHA}_seed${SEED}"
   checkpoint_dir="${CHECKPOINTS_ROOT}/${run_name}"
   echo ">>> Starting training: ${run_name}"
 
